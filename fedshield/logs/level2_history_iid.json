@@ -1,0 +1,72 @@
+{
+  "history": [
+    {
+      "round": 1,
+      "val_loss": 0.20635188293457032,
+      "val_acc": 0.936
+    },
+    {
+      "round": 2,
+      "val_loss": 0.10811138916015625,
+      "val_acc": 0.96
+    },
+    {
+      "round": 3,
+      "val_loss": 0.07105277061462402,
+      "val_acc": 0.976
+    },
+    {
+      "round": 4,
+      "val_loss": 0.05857550621032715,
+      "val_acc": 0.978
+    },
+    {
+      "round": 5,
+      "val_loss": 0.05151185607910156,
+      "val_acc": 0.984
+    },
+    {
+      "round": 6,
+      "val_loss": 0.04412050628662109,
+      "val_acc": 0.986
+    },
+    {
+      "round": 7,
+      "val_loss": 0.03734677505493164,
+      "val_acc": 0.99
+    },
+    {
+      "round": 8,
+      "val_loss": 0.035076481819152835,
+      "val_acc": 0.986
+    },
+    {
+      "round": 9,
+      "val_loss": 0.034357807159423825,
+      "val_acc": 0.988
+    },
+    {
+      "round": 10,
+      "val_loss": 0.034393064498901366,
+      "val_acc": 0.988
+    }
+  ],
+  "best_round": 9,
+  "best_test_acc": 0.9862,
+  "final_test_acc": 0.9872,
+  "args": {
+    "clients": 10,
+    "rounds": 10,
+    "local_epochs": 1,
+    "lr": 0.01,
+    "momentum": 0.9,
+    "partition": "iid",
+    "alpha": 0.5,
+    "seed": 42,
+    "val_size": 500,
+    "best_ckpt": "checkpoints/fedavg_mnist_best.pt",
+    "last_ckpt": "checkpoints/fedavg_mnist_last.pt",
+    "resume": false,
+    "eval_only": false
+  }
+}

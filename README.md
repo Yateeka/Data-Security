@@ -32,4 +32,4 @@ We measure final global-model test accuracy and malicious-client detection. Supp
 
 ## Repository contents
 
-The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, data split utilities, detector, metrics, and synthetic checks. See [`fedshield/README.md`](fedshield/README.md) for setup and run instructions.
+The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, the ten-client FedAvg baseline, data split utilities, detector, metrics, and synthetic checks. See [`fedshield/README.md`](fedshield/README.md) for setup and run instructions.
