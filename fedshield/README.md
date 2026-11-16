@@ -109,11 +109,13 @@ Yateeka and Jessie should jointly review the scoring interface and security-test
 
 ## Setup and first checks
 
-Tested environment for Level 2 (Jessie's run): Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4 (CPU, Linux). Level 1 was run on Yateeka's Mac; record its versions here too. From this directory, install the project dependencies once:
+Tested environment for Level 2 (Jessie's run): Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4 (CPU, Linux). Level 1 was run on Yateeka's Mac; record its versions here too. From this directory, install the pinned project dependencies once:
 
 ```bash
-pip install torch torchvision numpy
+pip install -r requirements.txt
 ```
+
+`requirements.txt` pins torch 2.7.0, torchvision 0.22.0, and NumPy 2.5.4. Python 3.12.3 is the tested interpreter version (pip cannot pin the Python version itself). On Linux, the default PyPI `torch==2.7.0` wheel includes CUDA 12.6 support and also runs on CPU-only machines.
 
 Run the synthetic checks from this folder:
 
@@ -138,6 +140,6 @@ python level2_fedavg.py --rounds 15 --resume           # continue training from 
 python level2_fedavg.py --partition dirichlet --alpha 0.5   # non-IID experiment
 ```
 
-Other options: `--clients`, `--local-epochs`, `--lr`, `--momentum`, `--seed`, `--val-size`. Note that a non-IID run writes to the same checkpoint files as the IID run unless you pass `--best-ckpt` / `--last-ckpt`.
+Device: `--device auto` (default) uses a CUDA GPU when one is available and falls back to CPU; `--device cpu` forces CPU; `--device cuda` requires a GPU and exits with an error if none is found. Other options: `--clients`, `--local-epochs`, `--lr`, `--momentum`, `--seed`, `--val-size`. Note that a non-IID run writes to the same checkpoint files as the IID run unless you pass `--best-ckpt` / `--last-ckpt`.
 
 The Level 3 entry point, `malicious_client.py` attack module, and plotting/runbook commands are still to be supplied by the integration work; agree on their filenames and command-line interface before documenting final demo commands.
