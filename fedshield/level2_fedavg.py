@@ -13,10 +13,13 @@ Usage:
     python level2_fedavg.py --partition dirichlet --alpha 0.5   # non-IID experiment
     python level2_fedavg.py --resume                 # continue from last checkpoint
     python level2_fedavg.py --eval-only              # test the saved best model
+    python level2_fedavg.py --device cpu             # force CPU (default: GPU if available)
 """
 import argparse
 import json
 import os
+
+import torch
 
 from common import (SmallCNN, evaluate, get_device, load_checkpoint,
                     save_checkpoint, set_seed)
@@ -25,6 +28,16 @@ from fl_core import fedavg, local_train, partition_clients
 
 BEST_CKPT = "checkpoints/fedavg_mnist_best.pt"   # best global model (for the TA)
 LAST_CKPT = "checkpoints/fedavg_mnist_last.pt"   # latest round (for --resume)
+
+
+def resolve_device(choice: str) -> torch.device:
+    """'auto' -> GPU if available else CPU; 'cuda' fails loudly if no GPU."""
+    if choice == "auto":
+        return get_device()
+    if choice == "cuda" and not torch.cuda.is_available():
+        raise SystemExit("--device cuda requested but no CUDA GPU is available; "
+                         "use --device cpu or --device auto")
+    return torch.device(choice)
 
 
 def main():
@@ -42,10 +55,13 @@ def main():
     ap.add_argument("--last-ckpt", default=LAST_CKPT)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--eval-only", action="store_true")
+    ap.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
+                    help="auto = GPU if available, else CPU (default)")
     args = ap.parse_args()
 
     set_seed(args.seed)
-    device = get_device()
+    device = resolve_device(args.device)
+    print(f"device: {device}")
     _, val_loader, test_loader, pool, val = make_loaders(
         args.seed, args.val_size, save_dir="checkpoints")
     check_no_leakage(pool, val)

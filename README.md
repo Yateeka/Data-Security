@@ -4,6 +4,39 @@
 
 FedShield is a CSC 8370 Data Security project investigating how a central server can detect and limit harmful client updates during federated learning. We use a ten-client simulation on MNIST to study whether examining model updates layer by layer, together with trusted server-side validation data, can improve resilience while preserving model accuracy.
 
+## Quick start
+
+All commands run from the `fedshield/` folder; checkpoint paths are relative to it.
+
+### 1. Set up the environment (Python 3.12)
+
+```bash
+cd fedshield
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+MNIST downloads automatically to `fedshield/data/mnist/` on the first run. The code uses a CUDA GPU when one is available and falls back to CPU otherwise.
+
+### 2. Test the saved models (Levels 1 and 2, inference only)
+
+```bash
+python level1_centralized.py --eval-only     # loads checkpoints/centralized_mnist.pt
+python level2_fedavg.py --eval-only          # loads checkpoints/fedavg_mnist_best.pt
+```
+
+### 3. Retrain (optional)
+
+```bash
+python level1_centralized.py --epochs 5 --seed 42
+python level2_fedavg.py                      # 10 clients, 10 rounds, 1 local epoch
+```
+
+### 4. Level 3 (live training)
+
+Coming soon: the Level 3 entry point and instructions for replacing the attack in `malicious_client.py`.
+
 ## What we are building
 
 The project covers three levels:
