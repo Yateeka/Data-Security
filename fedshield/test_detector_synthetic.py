@@ -17,16 +17,22 @@ from fedshield_detector import DetectorConfig, FedShieldDefense
 N, MAL = 10, 3
 
 
+def _randn_like(v, gen):
+    """Seeded randn with v's shape/dtype. torch.randn_like() only accepts a
+    `generator` argument in newer torch releases; this works on torch 2.7.0."""
+    return torch.randn(v.shape, generator=gen, dtype=v.dtype, device=v.device)
+
+
 def make_round(global_state, attack=None, scale=0.05, gen=None):
     """Return list of N client state_dicts. Client MAL is attacked if `attack`."""
-    shared = {k: torch.randn_like(v, generator=gen) for k, v in global_state.items()}
+    shared = {k: _randn_like(v, gen) for k, v in global_state.items()}
     states = []
     for i in range(N):
-        delta = {k: scale * (shared[k] + 0.5 * torch.randn_like(v, generator=gen))
+        delta = {k: scale * (shared[k] + 0.5 * _randn_like(v, gen))
                  for k, v in global_state.items()}
         if i == MAL and attack:
             if attack == "noise":
-                delta = {k: scale * 1.5 * torch.randn_like(v, generator=gen) for k, v in delta.items()}
+                delta = {k: scale * 1.5 * _randn_like(v, gen) for k, v in delta.items()}
             elif attack == "sign_flip":
                 delta = {k: -5 * v for k, v in delta.items()}
             elif attack == "scale":
