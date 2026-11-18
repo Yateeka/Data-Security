@@ -19,7 +19,7 @@ The Level 3 defended runner is implemented and integrated in `level3_fedshield.p
 
 Integrated evaluation found a meaningful limitation: the seeded benign run flagged client 5 in round 2, and the round-10 label-flip and sign-flip runs also flagged client 5 in round 2 before correctly flagging attacker 3 in round 10. Thus the one-round attack was caught with zero delay and rejected, but the repeated-evidence malicious-client verdict remained empty. The default sign-flip run (onset round 2) had no false-positive flags and rejected all nine malicious updates. These results should be reported as observed; they do not establish general performance across seeds or attack identities.
 
-See [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) for reproducible commands, [`results/level3_cpu_runs.json`](results/level3_cpu_runs.json) for the recorded results, and [`plots/fedshield_results.png`](plots/fedshield_results.png) for the accuracy/detection summary. Regenerate the plot with `python3 plot_results.py` (requires Matplotlib).
+See [`FIRST_RUN_REPORT.md`](FIRST_RUN_REPORT.md) for the complete first-run findings, [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) for reproducible commands, [`results/level3_cpu_runs.json`](results/level3_cpu_runs.json) for the recorded results, and [`plots/fedshield_results.png`](plots/fedshield_results.png) for the accuracy/detection summary. Regenerate the plot with `python3 plot_results.py` (requires Matplotlib).
 
 For evaluation hygiene, use the held-out validation set for training-time checks and detector scoring, and reserve test accuracy for the final evaluation. `level1_centralized.py` currently prints test accuracy after each epoch; avoid using those intermediate test results to choose settings or checkpoints. The reported 99.04% is the final epoch's test result from the current run.
 
@@ -107,6 +107,7 @@ Yateeka and Jessie should jointly review the scoring interface and security-test
 | `test_detector_synthetic.py` | Yateeka | Synthetic detector and split checks; passed. Integrated checks are recorded separately. |
 | `level3_fedshield.py` | Shared | Level 3 defended MNIST runner, attacks, guarded aggregation, validation evidence, and best/last checkpoints; CPU runs completed. |
 | `DEMO_RUNBOOK.md` | Shared | Reproducible demo commands and observed outcomes. |
+| `FIRST_RUN_REPORT.md` | Shared | Report page for the first integrated Level 3 run set. |
 | `plot_results.py`, `results/level3_cpu_runs.json` | Shared | Reproducible plot source and run metrics. |
 | `plots/fedshield_results.png` | Shared | Summary plot generated from saved run results. |
 | `dataloader4level1.py` | Course-provided | Course-provided data loader; preserve unchanged. |
