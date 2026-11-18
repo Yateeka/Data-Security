@@ -1,5 +1,8 @@
 # Downloaded MNIST data
 data/mnist/
+*.DS_Store
+checkpoints/*.pt
+checkpoints/client_partition_*.json
 
 # Python bytecode/cache
 __pycache__/

@@ -274,16 +274,26 @@ class FedShieldDefense:
                    reasons=res.reasons,
                    suspicion=[round(x, 4) for x in self.suspicion])
         self.history.append(rec)
+        for client_id in flagged:
+            print(f"FLAGGED client {client_id} in round {round_idx}")
         if self.log_path:
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(rec) + "\n")
         return res
 
     def final_verdict(self) -> dict:
-        """Report the malicious client only with repeated evidence."""
+        """Return both observed flags and the repeated-evidence verdict.
+
+        `malicious_client` retains the conservative repeated-evidence rule.
+        `flagged_clients` records anyone excluded for an anomaly at least once,
+        which preserves detections when an attack starts near the end of a run.
+        """
         top = max(range(self.n), key=lambda i: self.suspicion[i])
         ok = self.flag_counts[top] >= self.cfg.min_flag_rounds
+        flagged_clients = sorted({i for rec in self.history for i in rec["flagged"]})
+        print(f"Clients flagged at least once: {flagged_clients or 'none'}")
         return dict(malicious_client=top if ok else None, top_candidate=top,
+                    flagged_clients=flagged_clients,
                     suspicion=list(self.suspicion), flag_counts=list(self.flag_counts))
 
 

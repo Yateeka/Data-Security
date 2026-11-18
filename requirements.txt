@@ -1,0 +1,6 @@
+# Tested with Python 3.12.3 on Linux (see README.md "Setup and first checks").
+# Install: pip install -r requirements.txt
+torch==2.7.0
+torchvision==0.22.0
+numpy==2.5.4
+matplotlib==3.10.8
