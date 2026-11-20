@@ -30,6 +30,9 @@ def run_metrics(history: List[dict], malicious_id: Optional[int], onset: Optiona
         # delay in rounds after onset; 0 = caught in the very first attack round
         out["first_detection_delay"] = (caught[0] - onset) if caught else None
         out["detected_during_training"] = bool(caught)
+        out["flag_detection_correct"] = malicious_id in {
+            i for rec in active for i in (set(rec["flagged"]) | set(rec["invalid"]))
+        }
         # Rounds where the attacker slipped through (benign-looking update or miss)
         out["missed_attack_rounds"] = len(active) - len(caught)
         # Flags BEFORE onset are false positives on the (still honest) attacker

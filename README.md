@@ -35,7 +35,13 @@ python level2_fedavg.py                      # 10 clients, 10 rounds, 1 local ep
 
 ### 4. Level 3 (live training)
 
-Coming soon: the Level 3 entry point and instructions for replacing the attack in `malicious_client.py`.
+```bash
+python level3_fedshield.py --attack sign_flip --onset 2 --malicious-id 3
+python level3_fedshield.py --attack none
+python level3_fedshield.py --eval-only
+```
+
+The runner supports `none`, `noise`, `sign_flip`, `scale`, `free_ride`, and `label_flip` attacks. Level 3 results, scenario commands, and known false-positive behavior are documented in [`fedshield/README.md`](fedshield/README.md) and [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md).
 
 ## What we are building
 
@@ -65,4 +71,4 @@ We measure final global-model test accuracy and malicious-client detection. Supp
 
 ## Repository contents
 
-The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, the ten-client FedAvg baseline, data split utilities, detector, metrics, and synthetic checks. See [`fedshield/README.md`](fedshield/README.md) for setup and run instructions.
+The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, ten-client FedAvg baseline, defended Level 3 runner, data split utilities, detector, metrics, and synthetic checks. See [`fedshield/README.md`](fedshield/README.md) for setup and run instructions and [`fedshield/FIRST_RUN_REPORT.md`](fedshield/FIRST_RUN_REPORT.md) for results from the first integrated Level 3 run set.
