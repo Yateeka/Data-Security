@@ -19,7 +19,7 @@ The Level 3 defended runner is implemented and integrated in `level3_fedshield.p
 
 The first integrated evaluation (threshold placeholder 8.0) found a limitation: the seeded benign run flagged client 5 in round 2, and the round-10 attacks were caught but got no final verdict because the verdict required two flagged rounds. Both were fixed on Nov 24: the threshold is now 14.0, calibrated on benign development seeds 101–105, and a single flag with strong evidence (score ≥ 2 × threshold, or a malformed upload) also produces a verdict. With these settings, the seed-42 benign run has no flags, and round-10 sign-flip and label-flip attacks are identified (see `DEMO_RUNBOOK.md` §4). The default sign-flip run (onset round 2) had no false-positive flags and rejected all nine malicious updates. These results should be reported as observed; they do not establish general performance across seeds or attack identities.
 
-See [`FIRST_RUN_REPORT.md`](FIRST_RUN_REPORT.md) for the complete first-run findings, [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) for reproducible commands, [`results/level3_cpu_runs.json`](results/level3_cpu_runs.json) for the recorded results, and [`plots/fedshield_results.png`](plots/fedshield_results.png) for the accuracy/detection summary. Regenerate the plot with `python3 plot_results.py` (requires Matplotlib).
+The final evaluation sweep (62 runs, Nov 24, GPU, threshold 14.0) is written up in [`RESULTS.md`](RESULTS.md): six attacks with defense on/off, a benign control, onsets 5 and 10, ablations, seeds 42/7/123, a randomly chosen malicious client, and weak attacks that test what validation evidence adds. FedShield rejected every malicious upload in the round it was sent, with no false positives, and kept final accuracy at 98.70% ± 0.08 across seeds. Plain FedAvg dropped as low as 75.67% (`noise`). Raw numbers: [`results/level3_runs.json`](results/level3_runs.json). Rerun with `python run_sweep.py`, then redraw the plots with `python plot_results.py` (requires Matplotlib). [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) has the reproducible demo commands.
 
 For evaluation hygiene, use the held-out validation set for training-time checks and detector scoring, and reserve test accuracy for the final evaluation. `level1_centralized.py` now evaluates the test set only after training and selects its saved model by validation loss, like Level 2.
 
@@ -35,7 +35,7 @@ The following Yateeka-owned modules currently have implementation in the workspa
 - **Synthetic tests — `test_detector_synthetic.py`:** synthetic attack, benign false-positive, malformed-update, validation-evidence, calibration, and data-split checks; all pass. Integrated label-flip and simulator runs are recorded in the Level 3 results.
 - **Instructor template — `dataloader4level1.py`:** present in the folder. Keep the course-provided file unchanged.
 
-**Status:** the defended training entry point is `level3_fedshield.py`. CPU integration runs (PyTorch 2.15.0, earlier inline attack code) are complete for benign, sign-flip onset 2, sign-flip onset 10, and label-flip onset 10. GPU runs with PyTorch 2.7.0 and the integrated `malicious_client.py` are recorded in `DEMO_RUNBOOK.md`. The multi-seed/attack sweep remains outstanding.
+**Status:** the defended training entry point is `level3_fedshield.py`. CPU integration runs (PyTorch 2.15.0, earlier inline attack code) are complete for benign, sign-flip onset 2, sign-flip onset 10, and label-flip onset 10. GPU runs with PyTorch 2.7.0 and the integrated `malicious_client.py` are recorded in `DEMO_RUNBOOK.md`. The multi-seed/attack sweep is done (`run_sweep.py`, see `RESULTS.md`).
 
 ## Work completed by Jessie so far: Level 2 federated baseline
 
@@ -108,12 +108,14 @@ Yateeka and Jessie should jointly review the scoring interface and security-test
 | `detection_metrics.py` | Yateeka | Detection metrics, threshold calibration, and sweep helpers; integrated runs recorded. |
 | `test_detector_synthetic.py` | Yateeka | Synthetic detector and split checks; passed. Integrated checks are recorded separately. |
 | `level3_fedshield.py` | Shared | Level 3 defended MNIST runner: calls `malicious_client.py`, validation evidence, detector, clipping, guarded aggregation, and best/last checkpoints; CPU and GPU runs completed. |
+| `test_malicious_client.py` | Jessie | CPU-only checks of every attack mode (shapes, no input mutation, reproducibility, attack semantics, RNG isolation, settings reset); about 10 s, no MNIST needed. |
 | `malicious_client.py` | Jessie | Course-signature `generate_malicious_update` with the demo-day marker; four proposal attacks plus five robustness modes; TA-replaceable. |
 | `DEMO_RUNBOOK.md` | Shared | Reproducible demo commands and observed outcomes. |
-| `FIRST_RUN_REPORT.md` | Shared | Report page for the first integrated Level 3 run set. |
-| `plot_results.py`, `results/level3_cpu_runs.json` | Shared | Reproducible plot source and run metrics. |
+| `RESULTS.md` | Shared | Final Level 3 results: defense on/off, late onsets, ablations, seed spread, limitations. |
+| `run_sweep.py`, `results/level3_runs.json` | Jessie | Runs the 62-run evaluation sweep (blocks A–G, `--block` to pick one) in-process and writes the per-run summary. |
+| `plot_results.py` | Shared | Draws the Level 3 plots from `results/level3_runs.json`. |
 | `calibrate_threshold.py`, `results/calibration/` | Shared | Threshold calibration: benign development logs (seeds 101–105), attacker-score check (seed 101), seed-42 checks, and a script that recomputes the threshold from the logs. |
-| `plots/fedshield_results.png` | Shared | Summary plot generated from saved run results. |
+| `plots/fedshield_results.png`, `plots/fedshield_rounds.png` | Shared | Final accuracy (FedAvg vs FedShield) and per-round validation accuracy, drawn by `plot_results.py`. |
 | `dataloader4level1.py` | Course-provided | Course-provided data loader; preserve unchanged. |
 | `checkpoints/`, `logs/` | Shared | Output directories for model checkpoints and run logs. Level 1: `centralized_mnist_best.pt` (best epoch), `centralized_mnist_last.pt` (resume); Level 2: `fedavg_mnist_best.pt`, `fedavg_mnist_last.pt`; Level 3: `fedshield_mnist_best.pt`, `fedshield_mnist_last.pt`, plus named benign/late-onset scenario checkpoints and JSON summaries. |
 

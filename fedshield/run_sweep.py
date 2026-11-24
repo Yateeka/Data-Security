@@ -16,6 +16,12 @@ Blocks:
   C  sign_flip, label_flip at onset 5 and 10, defended       (late attacks)
   D  layer_only, label_flip with --no-validation / --no-clip (ablation)
   E  block A's defended runs + benign on seeds 7 and 123      (seed spread)
+  F  the 6 attacks on seeds 42, 7, 123 with --malicious-id random, defended
+     (attacker drawn from the seed instead of client 3; logs end in _mal<k>)
+  G  weak attacks chosen on development seed 101 (results/weak_attack_probe/), seed 42:
+     scale x3 (layer scores miss it, validation catches it) under full / no
+     validation / no clipping / no defense; layer_only x-1 (missed by both) and
+     sign_flip x-1 (caught by layer scores) under full / no defense
 
 Usage:
     python run_sweep.py              # run everything not done yet, then summarize
@@ -39,9 +45,11 @@ SUMMARY_PATH = "results/level3_runs.json"
 def plan():
     runs = []
 
-    def add(block, attack, seed=MAIN_SEED, onset=2, defense="on", ablation=None):
+    def add(block, attack, seed=MAIN_SEED, onset=2, defense="on", ablation=None,
+            malicious=str(MALICIOUS_ID), settings=None):
         runs.append(dict(block=block, attack=attack, seed=seed, onset=onset,
-                         defense=defense, ablation=ablation))
+                         defense=defense, ablation=ablation, malicious=malicious,
+                         settings=settings or {}))
 
     for a in ATTACKS:                                   # A
         for d in ("on", "off"):
@@ -57,7 +65,24 @@ def plan():
     for s in EXTRA_SEEDS:                               # E
         for a in ATTACKS + ["none"]:
             add("E", a, seed=s)
+    for s in [MAIN_SEED] + EXTRA_SEEDS:                 # F
+        for a in ATTACKS:
+            add("F", a, seed=s, malicious="random")
+    scale3 = {"scale_factor": 3.0}                      # G
+    add("G", "scale", settings=scale3)
+    add("G", "scale", settings=scale3, ablation="no_validation")
+    add("G", "scale", settings=scale3, ablation="no_clip")
+    add("G", "scale", settings=scale3, defense="off")
+    for a, st in (("layer_only", {"layer_factor": -1.0}), ("sign_flip", {"flip_factor": -1.0})):
+        add("G", a, settings=st)
+        add("G", a, settings=st, defense="off")
     return runs
+
+
+def malicious_id(r):
+    """The attacker's client index (resolves 'random' exactly as the runner does)."""
+    from level3_fedshield import _pick_malicious_id
+    return _pick_malicious_id(r["malicious"], r["seed"], 10)
 
 
 def run_name(r):
@@ -68,15 +93,21 @@ def run_name(r):
         tag = "_noval"
     elif r["ablation"] == "no_clip":
         tag = "_noclip"
-    return f"fedshield_{r['attack']}_iid_seed{r['seed']}_onset{r['onset']}{tag}"
+    mid = malicious_id(r)
+    mal = f"_mal{mid}" if r["attack"] != "none" and mid != MALICIOUS_ID else ""
+    from level3_fedshield import _settings_tag
+    return (f"fedshield_{r['attack']}_iid_seed{r['seed']}_onset{r['onset']}{mal}"
+            f"{_settings_tag(r['settings'])}{tag}")
 
 
 def argv_for(r):
     name = run_name(r)
     argv = ["--attack", r["attack"], "--seed", str(r["seed"]), "--onset", str(r["onset"]),
-            "--malicious-id", str(MALICIOUS_ID), "--defense", r["defense"], "--device", "auto",
+            "--malicious-id", r["malicious"], "--defense", r["defense"], "--device", "auto",
             "--best-ckpt", f"checkpoints/sweep/{name}_best.pt",
             "--last-ckpt", f"checkpoints/sweep/{name}_last.pt"]
+    for k, v in sorted(r["settings"].items()):
+        argv += ["--attack-setting", f"{k}={v}"]
     if r["ablation"] == "no_validation":
         argv.append("--no-validation")
     if r["ablation"] == "no_clip":
@@ -113,7 +144,9 @@ def summarize(runs):
         m = d.get("metrics") or {}
         rows.append(dict(
             block=r["block"], name=run_name(r), condition=condition(r), attack=r["attack"],
-            seed=r["seed"], onset=r["onset"],
+            seed=r["seed"], onset=r["onset"], malicious_id=d["config"]["malicious_id"],
+            malicious_choice="random" if r["malicious"] == "random" else "fixed",
+            attack_settings=r["settings"],
             final_test_acc=d["final_test_acc"], best_test_acc=d["best_test_acc"],
             val_acc_per_round=[h["val_acc"] for h in d["history"]],
             malicious_rejected=m.get("malicious_updates_rejected"),
@@ -123,14 +156,18 @@ def summarize(runs):
             verdict=(d.get("verdict") or {}).get("malicious_client"),
             verdict_correct=m.get("verdict_correct")))
 
-    # Mean/stdev of final accuracy for defended runs over all seeds (blocks A, B, E).
-    by_attack = {}
-    for row in rows:
-        if row["condition"] == "FedShield" and row["onset"] == 2:
-            by_attack.setdefault(row["attack"], []).append(row["final_test_acc"])
-    seed_summary = {a: dict(n=len(v), mean=round(statistics.mean(v), 4),
-                            stdev=round(statistics.stdev(v), 4) if len(v) > 1 else 0.0)
-                    for a, v in by_attack.items()}
+    # Mean/stdev of defended final accuracy over seeds, onset 2: client 3 (A, B, E)
+    # and the random attacker (F) kept apart.
+    def over_seeds(choice):
+        by_attack = {}
+        for row in rows:
+            if (row["condition"] == "FedShield" and row["onset"] == 2
+                    and row["malicious_choice"] == choice and not row["attack_settings"]):
+                by_attack.setdefault(row["attack"], []).append(row["final_test_acc"])
+        return {a: dict(n=len(v), mean=round(statistics.mean(v), 4),
+                        stdev=round(statistics.stdev(v), 4) if len(v) > 1 else 0.0)
+                for a, v in by_attack.items()}
+    seed_summary, random_summary = over_seeds("fixed"), over_seeds("random")
 
     os.makedirs(os.path.dirname(SUMMARY_PATH), exist_ok=True)
     with open(SUMMARY_PATH, "w") as f:
@@ -138,41 +175,48 @@ def summarize(runs):
             setup=dict(clients=10, rounds=10, local_epochs=1, partition="iid",
                        malicious_id=MALICIOUS_ID, threshold=DetectorConfig().threshold,
                        main_seed=MAIN_SEED, extra_seeds=EXTRA_SEEDS),
-            runs=rows, fedshield_final_acc_over_seeds=seed_summary), f, indent=2)
+            runs=rows, fedshield_final_acc_over_seeds=seed_summary,
+            fedshield_final_acc_over_seeds_random_attacker=random_summary), f, indent=2)
 
     print(f"\n{len(rows)}/{len(runs)} runs collected -> {SUMMARY_PATH}")
-    print(f"{'block':<5} {'condition':<26} {'attack':<11} {'seed':>4} {'onset':>5} "
+    print(f"{'block':<5} {'condition':<26} {'attack':<11} {'seed':>4} {'onset':>5} {'mal':>3} "
           f"{'final':>7} {'rejected':>8} {'FP':>3} {'verdict':>7}")
     for row in rows:
         rej = (f"{row['malicious_rejected']}/{row['attack_rounds']}"
                if row["attack_rounds"] else "-")
         fp = "-" if row["false_positive_exclusions"] is None else row["false_positive_exclusions"]
-        print(f"{row['block']:<5} {row['condition']:<26} {row['attack']:<11} {row['seed']:>4} "
-              f"{row['onset']:>5} {row['final_test_acc']:>7.4f} {rej:>8} {fp:>3} "
+        print(f"{row['block']:<5} {row['condition']:<26} {row['attack'] + ('*' if row['attack_settings'] else ''):<11} {row['seed']:>4} "
+              f"{row['onset']:>5} {row['malicious_id'] if row['attack'] != 'none' else '-':>3} "
+              f"{row['final_test_acc']:>7.4f} {rej:>8} {fp:>3} "
               f"{str(row['verdict']):>7}")
-    if seed_summary:
-        print("\nFedShield final test accuracy over seeds (onset 2):")
-        for a, s in seed_summary.items():
-            print(f"  {a:<11} n={s['n']}  mean={s['mean']:.4f}  stdev={s['stdev']:.4f}")
+    print("(* = weakened attack, see attack_settings)")
+    for title, summ in (("client 3", seed_summary), ("random attacker", random_summary)):
+        if summ:
+            print(f"\nFedShield final test accuracy over seeds (onset 2, {title}):")
+            for a, s in summ.items():
+                print(f"  {a:<11} n={s['n']}  mean={s['mean']:.4f}  stdev={s['stdev']:.4f}")
 
 
 def main():
     ap = argparse.ArgumentParser(description="Run the final Level 3 evaluation sweep")
     ap.add_argument("--summary", action="store_true", help="only rebuild the summary")
     ap.add_argument("--dry-run", action="store_true", help="list planned runs")
+    ap.add_argument("--block", action="append",
+                    help="only run these blocks (e.g. --block G); the summary covers all")
     args = ap.parse_args()
     runs = plan()
+    selected = [r for r in runs if not args.block or r["block"] in args.block]
 
     if args.dry_run:
-        for i, r in enumerate(runs, 1):
+        for i, r in enumerate(selected, 1):
             status = "done" if load_current(r) else "todo"
             print(f"{i:2d} [{status}] {r['block']} {run_name(r)}")
         return
     if not args.summary:
         import level3_fedshield
         os.makedirs("checkpoints/sweep", exist_ok=True)
-        todo = [r for r in runs if load_current(r) is None]
-        print(f"{len(runs)} planned runs, {len(runs) - len(todo)} already done, "
+        todo = [r for r in selected if load_current(r) is None]
+        print(f"{len(selected)} planned runs, {len(selected) - len(todo)} already done, "
               f"{len(todo)} to run")
         for i, r in enumerate(todo, 1):
             print(f"\n===== [{i}/{len(todo)}] {run_name(r)} =====", flush=True)

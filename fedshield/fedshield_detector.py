@@ -218,6 +218,7 @@ class FedShieldDefense:
         valid_ids = [i for i in range(n) if i not in invalid]
 
         scores = [0.0] * n
+        layer_part, val_part = [0.0] * n, [0.0] * n   # score components, for analysis
         reasons = {i: why for i, why in invalid.items()}
         flagged: List[int] = []
 
@@ -241,6 +242,8 @@ class FedShieldDefense:
             # per-client score + dominant reason
             for a, i in enumerate(valid_ids):
                 scores[i] = float(total[a])
+                layer_part[i] = float(layer_score[a])
+                val_part[i] = float(cfg.val_weight * val_z[a])
                 if direct_any[a]:
                     l = int(s["direct"][a].nonzero()[0])
                     reasons[i] = f"near_zero_norm:{s['layers'][l]}"
@@ -278,6 +281,8 @@ class FedShieldDefense:
                           reasons={i: reasons[i] for i in excluded if i in reasons})
         rec = dict(round=round_idx, accepted=accepted, flagged=flagged,
                    invalid=invalid_ids, scores=[round(x, 4) for x in scores],
+                   layer_scores=[round(x, 4) for x in layer_part],
+                   val_scores=[round(x, 4) for x in val_part],
                    reasons=res.reasons,
                    suspicion=[round(x, 4) for x in self.suspicion])
         self.history.append(rec)
