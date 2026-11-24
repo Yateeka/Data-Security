@@ -95,7 +95,7 @@ python level3_fedshield.py --onset 2 --malicious-id 3
 
 If the replacement file defines only `generate_malicious_update`, the script runs it as the `custom` attack. The script decides when the attack starts (`--onset`), so the function does not need a round number. If the function raises an exception or returns a malformed state dict, that upload is treated as invalid and excluded; training continues.
 
-Final results (80 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks, per-layer vs whole-model scoring): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
+Final results (82 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks, per-layer vs whole-model scoring): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
 
 ## What we are building
 
