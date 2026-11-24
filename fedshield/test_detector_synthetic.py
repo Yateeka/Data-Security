@@ -5,10 +5,9 @@ Checks the detector WITHOUT needing the FL simulator or MNIST:
 benign clients share a common update direction + noise; attacks are injected
 into one client. Also checks the data split (with a fake dataset, no download).
 """
-import copy
 
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import TensorDataset
 
 from common import SmallCNN, set_seed
 from detection_metrics import calibrate_threshold, run_metrics

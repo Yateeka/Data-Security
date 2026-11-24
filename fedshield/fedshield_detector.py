@@ -27,7 +27,6 @@ Interface for Jessie (see bottom of file for a usage example):
     `val_deltas[i]` = val_loss(global + delta_i) - val_loss(global)   (optional)
 """
 import json
-import math
 import os
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional

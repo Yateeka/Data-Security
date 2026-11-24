@@ -82,7 +82,7 @@ Observed results (seed 42, GPU, torch 2.7.0, calibrated threshold 14.0):
 - **Label flip, onset 10:** client 3 was flagged and excluded in round 10 (1/1 rejected), no other client was flagged, and the final verdict was client 3 (strong single-round evidence). Final model: 98.75%.
 - **Sign flip, onset 10:** same outcome: client 3 flagged in round 10 only, final verdict client 3. Final model: 98.75%.
 - **Benign:** no client was flagged in any round, and the final verdict was "no malicious client identified". Final model: 98.76%.
-- **NaN** (earlier run, threshold 8.0): all 9 malicious uploads were rejected as invalid (`nan_or_inf`), training continued without errors, and the final verdict was client 3.
+- **NaN:** all 9 malicious uploads were rejected as invalid (`nan_or_inf`), training continued without errors, and the final verdict was client 3. Final model: 98.71%.
 
 ### How the threshold and verdict rule were set
 
@@ -113,9 +113,9 @@ Observed in the final sweep (seed 42, GPU, torch 2.7.0, threshold 14.0, maliciou
 | `free_ride` | 98.61% | 98.71% | | |
 | none (benign) | 98.71% | 98.76% | | |
 
-FedShield rejected 9/9 malicious uploads with 0 false positives in every defended run. All defended attack runs end at the same 98.71%: client 3 is excluded from round 2 on, so each round averages the same 9 honest updates. Removing validation evidence or clipping changes nothing for these attacks, because the layer-aware scores alone catch them, and the clip bound of 5.0 is far above honest update norms. An earlier run (threshold 8.0) also showed that one NaN upload under plain FedAvg makes the model unusable (9.80%).
+FedShield rejected 9/9 malicious uploads with 0 false positives in every defended run. All defended attack runs end at the same 98.71%: client 3 is excluded from round 2 on, so each round averages the same 9 honest updates. Removing validation evidence or clipping changes nothing for these attacks, because the layer-aware scores alone catch them, and the clip bound of 5.0 is far above honest update norms. With `nan` uploads, plain FedAvg is ruined from the first attack round on (9.80% final accuracy, chance level), while FedShield rejects all 9 as invalid and ends at 98.71%.
 
-To rerun every scenario: `python run_sweep.py` (80 runs, ~2.5 h on GPU; checkpoints go to `checkpoints/sweep/`). Weaker attacks (`--attack-setting`, e.g. `scale_factor=3`) do show what validation adds: without it, `scale` ×3 is accepted in all 9 rounds, with it all 9 are rejected; see [`RESULTS.md`](RESULTS.md) §6. `--whole-model --threshold 13.8` scores the model as one vector instead of per layer. Without validation, it rejects the single-layer `layer_only` attack in only 5 of 9 rounds, while per-layer scoring rejects all 9 (§7).
+To rerun every scenario: `python run_sweep.py` (82 runs, ~2.5 h on GPU; checkpoints go to `checkpoints/sweep/`). Weaker attacks (`--attack-setting`, e.g. `scale_factor=3`) do show what validation adds: without it, `scale` ×3 is accepted in all 9 rounds, with it all 9 are rejected; see [`RESULTS.md`](RESULTS.md) §6. `--whole-model --threshold 13.8` scores the model as one vector instead of per layer. Without validation, it rejects the single-layer `layer_only` attack in only 5 of 9 rounds, while per-layer scoring rejects all 9 (§7).
 
 ## 6. Reload and resume
 
@@ -130,6 +130,6 @@ To continue an interrupted run, repeat the original command with `--resume`. The
 
 ## 7. Recorded results and limitations
 
-- Final results: [`RESULTS.md`](RESULTS.md), [`results/level3_runs.json`](results/level3_runs.json) (80 runs from `run_sweep.py`), and the plots `plots/fedshield_results.png` and `plots/fedshield_rounds.png` (`python plot_results.py`). The `logs/fedshield_*` files listed in `results/level3_runs.json` come from this sweep.
+- Final results: [`RESULTS.md`](RESULTS.md), [`results/level3_runs.json`](results/level3_runs.json) (82 runs from `run_sweep.py`), and the plots `plots/fedshield_results.png` and `plots/fedshield_rounds.png` (`python plot_results.py`). The `logs/fedshield_*` files listed in `results/level3_runs.json` come from this sweep.
 - The threshold was calibrated on 5 benign IID runs. A non-IID split or a weaker, stealthier attack (score between 14 and 28, appearing only in the last round) would be excluded but not named in the final verdict.
 - Results cover 3 seeds (42, 7, 123), an IID split, and malicious clients 3, 9, and 7. Adaptive attacks that tune themselves to stay under the threshold were not tested.

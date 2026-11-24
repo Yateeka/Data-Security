@@ -11,7 +11,7 @@ Re-running skips scenarios whose log already exists AND was produced by the
 current code and threshold, so an interrupted sweep can simply be restarted.
 
 Blocks:
-  A  6 attacks x {defense on, off}, seed 42, onset 2        (main comparison)
+  A  6 attacks (+ nan uploads) x {defense on, off}, seed 42, onset 2   (main comparison)
   B  benign (no attacker) x {on, off}, seed 42               (baseline / false positives)
   C  sign_flip, label_flip at onset 5 and 10, defended       (late attacks)
   D  layer_only, label_flip with --no-validation / --no-clip (ablation)
@@ -64,6 +64,8 @@ def plan():
     for a in ATTACKS:                                   # A
         for d in ("on", "off"):
             add("A", a, defense=d)
+    for d in ("on", "off"):                             # A: malformed (NaN) uploads
+        add("A", "nan", defense=d)
     for d in ("on", "off"):                             # B
         add("B", "none", defense=d)
     for a in ("sign_flip", "label_flip"):               # C

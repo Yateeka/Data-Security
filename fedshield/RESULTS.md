@@ -2,7 +2,7 @@
 
 **Setup:** MNIST, 10 clients, IID split, 10 rounds, 1 local epoch per round, client 3 malicious (zero-indexed) unless stated otherwise, detector threshold 14.0 (calibrated on benign development seeds 101–105, see [`results/calibration/`](results/calibration/README.md)).
 **Environment:** GTX 1080 Ti, PyTorch 2.7.0, Nov 24, 2026. About 2 minutes per run.
-**Source:** 80 runs from `python run_sweep.py` (blocks A–G, W0, W). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
+**Source:** 82 runs from `python run_sweep.py` (blocks A–G, W0, W). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
 
 ## 1. Defense on vs off
 
@@ -12,6 +12,7 @@ Seed 42, attack starts in round 2 (9 attack rounds).
 
 | Attack | FedAvg, no defense | FedShield | Malicious uploads rejected | Detection delay | Honest uploads rejected | Final verdict |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `nan` (malformed upload) | 9.80% | 98.71% | 9/9 (invalid) | 0 rounds | 0 | client 3 |
 | `noise` | 75.67% | 98.71% | 9/9 | 0 rounds | 0 | client 3 |
 | `layer_only` | 93.09% | 98.71% | 9/9 | 0 rounds | 0 | client 3 |
 | `sign_flip` | 96.41% | 98.71% | 9/9 | 0 rounds | 0 | client 3 |
@@ -20,9 +21,9 @@ Seed 42, attack starts in round 2 (9 attack rounds).
 | `free_ride` | 98.61% | 98.71% | 9/9 | 0 rounds | 0 | client 3 |
 | no attacker | 98.71% | 98.76% | — | — | 0 | none |
 
-- Without a defense, one malicious client out of ten costs between 0.1 points (`free_ride`) and 23 points (`noise`). The `noise` attack drops validation accuracy to 34% in round 2, the first attack round.
+- Without a defense, one malicious client out of ten costs between 0.1 points (`free_ride`) and 23 points (`noise`). A single NaN upload is averaged into every weight and ruins the model (9.80%, chance level); FedShield rejects it as invalid before any scoring. The `noise` attack drops validation accuracy to 34% in round 2, the first attack round.
 - With FedShield, the attacker was excluded in every attack round, starting with the first, and no honest client was ever excluded.
-- **Why every defended run ends at exactly 98.71%:** from round 2 on, client 3 is excluded every round. Each round then averages the same 9 honest updates, whatever client 3 uploaded. Round 1 is identical too, because the attacker trains honestly before the onset. The model is therefore the same in all six runs. The no-attacker run averages all 10 clients, so it differs slightly (98.76%).
+- **Why every defended run ends at exactly 98.71%:** from round 2 on, client 3 is excluded every round. Each round then averages the same 9 honest updates, whatever client 3 uploaded. Round 1 is identical too, because the attacker trains honestly before the onset. The model is therefore the same in all seven runs. The no-attacker run averages all 10 clients, so it differs slightly (98.76%).
 - `free_ride` barely hurts plain FedAvg. An unchanged model only dilutes the average by 1/10. It is still worth catching, because the client gets the global model without contributing.
 
 ![Validation accuracy per round](plots/fedshield_rounds.png)
@@ -149,7 +150,7 @@ This is one seed and one single-layer attack, so it supports, rather than proves
 From `fedshield/`:
 
 ```bash
-python run_sweep.py            # all 80 runs, skips any already logged with the current threshold (~2.5 h on GPU)
+python run_sweep.py            # all 82 runs, skips any already logged with the current threshold (~2.5 h on GPU)
 python run_sweep.py --block G  # only one block (A-G, W0, W; see the top of run_sweep.py)
 python run_sweep.py --calibrate-whole   # whole-model threshold from the W0 logs
 python run_sweep.py --summary  # rebuild results/level3_runs.json from the logs
