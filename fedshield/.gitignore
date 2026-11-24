@@ -11,3 +11,6 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Sweep checkpoints (one per evaluation run; not needed for submission)
+checkpoints/sweep/

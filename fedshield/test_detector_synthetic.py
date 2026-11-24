@@ -74,6 +74,26 @@ def test_late_onset_immediate_exclusion():
     assert MAL not in d.history[8]["accepted"]
 
 
+def test_last_round_attack_gets_verdict():
+    # Attack only in round 10: one flag, but with strong evidence -> verdict.
+    for atk in ["sign_flip", "free_ride"]:
+        d = run_scenario(atk, onset=10)
+        assert MAL in d.history[9]["flagged"], atk
+        assert d.final_verdict()["malicious_client"] == MAL, atk
+
+
+def test_weak_single_flag_gets_no_verdict():
+    # One flag just above the threshold is not enough evidence for a verdict.
+    d = FedShieldDefense(N, DetectorConfig(use_validation=False), log_path=None)
+    thr = d.cfg.threshold
+    d.history = [dict(round=r, flagged=[MAL] if r == 2 else [], invalid=[],
+                      scores=[thr * 1.1 if (r == 2 and i == MAL) else 1.0 for i in range(N)])
+                 for r in range(1, 11)]
+    d.flag_counts[MAL] = 1
+    d.suspicion[MAL] = 1.0
+    assert d.final_verdict()["malicious_client"] is None
+
+
 def test_benign_no_false_positives():
     fp = 0
     for seed in range(5):

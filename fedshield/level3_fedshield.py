@@ -142,7 +142,7 @@ def _restore_detector(defense, state):
     defense.history = list(state["history"])
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description="Run the FedShield defended MNIST experiment")
     ap.add_argument("--clients", type=int, default=10)
     ap.add_argument("--rounds", type=int, default=10)
@@ -157,7 +157,8 @@ def main():
                     help="mode passed to malicious_client.configure(); 'none' = no attacker")
     ap.add_argument("--onset", type=int, default=2, help="1-indexed first attack round (>=2 for attacks)")
     ap.add_argument("--malicious-id", type=int, default=3, help="0-indexed malicious client")
-    ap.add_argument("--threshold", type=float, default=8.0)
+    ap.add_argument("--threshold", type=float, default=DetectorConfig().threshold,
+                    help="detector flag threshold (default: calibrated value in fedshield_detector.py)")
     ap.add_argument("--clip-norm", type=float, default=5.0)
     ap.add_argument("--defense", choices=["on", "off"], default="on",
                     help="on = FedShield (default); off = plain FedAvg baseline, no detector")
@@ -173,7 +174,7 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--eval-only", action="store_true")
     ap.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.clients < 3:
         ap.error("--clients must be at least 3 for layer-aware scoring")
