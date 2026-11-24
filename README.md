@@ -72,6 +72,7 @@ python level3_fedshield.py --attack sign_flip --no-validation    # detector with
 python level3_fedshield.py --attack sign_flip --no-clip          # defense without norm clipping
 python level3_fedshield.py --attack sign_flip --malicious-id random   # attacker drawn from --seed
 python level3_fedshield.py --attack scale --attack-setting scale_factor=3   # weaker attack (any ATTACK_CONFIG key)
+python level3_fedshield.py --attack layer_only --whole-model --threshold 13.8   # one score for the whole model
 ```
 
 `--defense off` runs plain FedAvg over every upload with no detector. `--no-validation` and `--no-clip` each remove one defense component. Each condition saves to its own files (`checkpoints/fedshield_mnist_nodefense_*.pt`, `_noval_`, `_noclip_`, and matching `logs/` names), so the main defended checkpoint is never overwritten.
@@ -94,7 +95,7 @@ python level3_fedshield.py --onset 2 --malicious-id 3
 
 If the replacement file defines only `generate_malicious_update`, the script runs it as the `custom` attack. The script decides when the attack starts (`--onset`), so the function does not need a round number. If the function raises an exception or returns a malformed state dict, that upload is treated as invalid and excluded; training continues.
 
-Final results (62 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
+Final results (80 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks, per-layer vs whole-model scoring): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
 
 ## What we are building
 

@@ -22,6 +22,11 @@ Blocks:
      scale x3 (layer scores miss it, validation catches it) under full / no
      validation / no clipping / no defense; layer_only x-1 (missed by both) and
      sign_flip x-1 (caught by layer scores) under full / no defense
+  W0 whole-model scoring, benign, development seeds 101-105, --threshold 1e9
+     (calibrates the whole-model threshold the same way as the main one)
+  W  per-layer vs whole-model scoring, seed 42: the 6 attacks scored without
+     validation evidence in both modes (geometry only), whole-model with
+     validation for layer_only/noise, and a whole-model benign run
 
 Usage:
     python run_sweep.py              # run everything not done yet, then summarize
@@ -38,6 +43,10 @@ from fedshield_detector import DetectorConfig
 
 ATTACKS = ["noise", "sign_flip", "scale", "free_ride", "label_flip", "layer_only"]
 MAIN_SEED, EXTRA_SEEDS = 42, [7, 123]
+DEV_SEEDS = [101, 102, 103, 104, 105]
+# Whole-model threshold: max benign score in block W0 x 1.25, like the main one
+# (python run_sweep.py --calibrate-whole recomputes it from the W0 logs).
+WHOLE_MODEL_THRESHOLD = 13.8   # benign max 11.04 (seed 104, round 1) x 1.25 = 13.80
 MALICIOUS_ID = 3
 SUMMARY_PATH = "results/level3_runs.json"
 
@@ -46,10 +55,11 @@ def plan():
     runs = []
 
     def add(block, attack, seed=MAIN_SEED, onset=2, defense="on", ablation=None,
-            malicious=str(MALICIOUS_ID), settings=None):
+            malicious=str(MALICIOUS_ID), settings=None, whole=False, threshold=None):
         runs.append(dict(block=block, attack=attack, seed=seed, onset=onset,
                          defense=defense, ablation=ablation, malicious=malicious,
-                         settings=settings or {}))
+                         settings=settings or {}, whole=whole,
+                         threshold=threshold or DetectorConfig().threshold))
 
     for a in ATTACKS:                                   # A
         for d in ("on", "off"):
@@ -76,6 +86,17 @@ def plan():
     for a, st in (("layer_only", {"layer_factor": -1.0}), ("sign_flip", {"flip_factor": -1.0})):
         add("G", a, settings=st)
         add("G", a, settings=st, defense="off")
+    for s in DEV_SEEDS:                                 # W0
+        add("W0", "none", seed=s, whole=True, threshold=1e9)
+    if WHOLE_MODEL_THRESHOLD is not None:               # W
+        wt = WHOLE_MODEL_THRESHOLD
+        for a in ATTACKS:
+            if a not in ("layer_only", "label_flip"):   # those two already in block D
+                add("W", a, ablation="no_validation")
+            add("W", a, ablation="no_validation", whole=True, threshold=wt)
+        for a in ("layer_only", "noise"):
+            add("W", a, whole=True, threshold=wt)
+        add("W", "none", whole=True, threshold=wt)
     return runs
 
 
@@ -86,13 +107,11 @@ def malicious_id(r):
 
 
 def run_name(r):
-    tag = ""
     if r["defense"] == "off":
         tag = "_nodefense"
-    elif r["ablation"] == "no_validation":
-        tag = "_noval"
-    elif r["ablation"] == "no_clip":
-        tag = "_noclip"
+    else:  # same order as level3_fedshield._variant_tag
+        tag = (("_whole" if r["whole"] else "")
+               + {None: "", "no_validation": "_noval", "no_clip": "_noclip"}[r["ablation"]])
     mid = malicious_id(r)
     mal = f"_mal{mid}" if r["attack"] != "none" and mid != MALICIOUS_ID else ""
     from level3_fedshield import _settings_tag
@@ -112,6 +131,10 @@ def argv_for(r):
         argv.append("--no-validation")
     if r["ablation"] == "no_clip":
         argv.append("--no-clip")
+    if r["whole"]:
+        argv.append("--whole-model")
+    if r["threshold"] != DetectorConfig().threshold:
+        argv += ["--threshold", str(r["threshold"])]
     return argv
 
 
@@ -123,7 +146,7 @@ def load_current(r):
     with open(path) as f:
         d = json.load(f)
     cfg = d.get("config", {})
-    if "defense" not in cfg or cfg.get("threshold") != DetectorConfig().threshold:
+    if "defense" not in cfg or cfg.get("threshold") != r["threshold"]:
         return None  # produced by older code or the old 8.0 threshold
     return d
 
@@ -131,8 +154,23 @@ def load_current(r):
 def condition(r):
     if r["defense"] == "off":
         return "FedAvg (no defense)"
+    if r["whole"]:
+        return {None: "Whole-model", "no_validation": "Whole-model, no validation"}[r["ablation"]]
     return {None: "FedShield", "no_validation": "FedShield, no validation",
             "no_clip": "FedShield, no clipping"}[r["ablation"]]
+
+
+def calibrate_whole(runs):
+    """Whole-model threshold from the W0 benign development logs (max x 1.25)."""
+    from detection_metrics import calibrate_threshold
+    hist = [load_current(r)["history"] for r in runs if r["block"] == "W0" and load_current(r)]
+    if len(hist) < len(DEV_SEEDS):
+        raise SystemExit(f"only {len(hist)}/{len(DEV_SEEDS)} W0 runs found; run --block W0 first")
+    maxes = [round(max(h["scores"]), 2) for run in hist for h in run]
+    raw = calibrate_threshold(hist, margin=1.25)
+    print(f"whole-model benign max score {max(maxes)} over {len(maxes)} rounds "
+          f"-> x1.25 = {raw:.2f} -> threshold {round(raw, 1)}")
+    return round(raw, 1)
 
 
 def summarize(runs):
@@ -146,6 +184,7 @@ def summarize(runs):
             block=r["block"], name=run_name(r), condition=condition(r), attack=r["attack"],
             seed=r["seed"], onset=r["onset"], malicious_id=d["config"]["malicious_id"],
             malicious_choice="random" if r["malicious"] == "random" else "fixed",
+            scoring="whole-model" if r["whole"] else "per-layer", threshold=r["threshold"],
             attack_settings=r["settings"],
             final_test_acc=d["final_test_acc"], best_test_acc=d["best_test_acc"],
             val_acc_per_round=[h["val_acc"] for h in d["history"]],
@@ -201,12 +240,17 @@ def main():
     ap = argparse.ArgumentParser(description="Run the final Level 3 evaluation sweep")
     ap.add_argument("--summary", action="store_true", help="only rebuild the summary")
     ap.add_argument("--dry-run", action="store_true", help="list planned runs")
+    ap.add_argument("--calibrate-whole", action="store_true",
+                    help="print the whole-model threshold from the W0 logs")
     ap.add_argument("--block", action="append",
                     help="only run these blocks (e.g. --block G); the summary covers all")
     args = ap.parse_args()
     runs = plan()
     selected = [r for r in runs if not args.block or r["block"] in args.block]
 
+    if args.calibrate_whole:
+        calibrate_whole(runs)
+        return
     if args.dry_run:
         for i, r in enumerate(selected, 1):
             status = "done" if load_current(r) else "todo"

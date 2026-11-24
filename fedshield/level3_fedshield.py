@@ -113,7 +113,8 @@ def _variant_tag(args) -> str:
     """'' for the full defense; otherwise a suffix naming the condition."""
     if args.defense == "off":
         return "_nodefense"
-    return ("_noval" if args.no_validation else "") + ("_noclip" if args.no_clip else "")
+    return (("_whole" if args.whole_model else "") + ("_noval" if args.no_validation else "")
+            + ("_noclip" if args.no_clip else ""))
 
 
 DEFAULT_MALICIOUS_ID = 3
@@ -203,6 +204,9 @@ def main(argv=None):
                     help="ablation: detector uses layer-aware scores only")
     ap.add_argument("--no-clip", action="store_true",
                     help="ablation: skip norm clipping of accepted updates")
+    ap.add_argument("--whole-model", action="store_true",
+                    help="ablation: score the whole model as one vector instead of per layer "
+                         "(pass its own calibrated --threshold)")
     ap.add_argument("--best-ckpt", default=None,
                     help="default: checkpoints/fedshield_mnist<variant>_best.pt")
     ap.add_argument("--last-ckpt", default=None,
@@ -237,8 +241,8 @@ def main(argv=None):
         ap.error("--onset cannot be later than --rounds")
     if args.clip_norm <= 0:
         ap.error("--clip-norm must be positive")
-    if args.defense == "off" and (args.no_validation or args.no_clip):
-        ap.error("--no-validation/--no-clip are ablations of the defense; "
+    if args.defense == "off" and (args.no_validation or args.no_clip or args.whole_model):
+        ap.error("--no-validation/--no-clip/--whole-model are ablations of the defense; "
                  "do not combine them with --defense off")
     tag = _variant_tag(args)
     args.best_ckpt = args.best_ckpt or f"{CKPT_PREFIX}{tag}_best.pt"
@@ -266,6 +270,8 @@ def main(argv=None):
                   threshold=args.threshold, val_size=args.val_size,
                   defense=args.defense, use_validation=not args.no_validation,
                   clip=not args.no_clip)
+    if args.whole_model:  # only present when used, so older checkpoints still --resume
+        config["layer_aware"] = False
     if attack_settings:   # only present when used, so older checkpoints still --resume
         config["attack_settings"] = attack_settings
 
@@ -286,11 +292,13 @@ def main(argv=None):
     log_path = args.log_path or f"logs/{run_name}.jsonl"
     print(f"condition: " + ("FedShield defense" if defended else "plain FedAvg (no defense)")
           + (" | no validation evidence" if args.no_validation else "")
-          + (" | no clipping" if args.no_clip else ""))
+          + (" | no clipping" if args.no_clip else "")
+          + (" | whole-model scoring" if args.whole_model else ""))
     defense = None
     if defended:
         detector_cfg = DetectorConfig(threshold=args.threshold,
-                                      use_validation=not args.no_validation)
+                                      use_validation=not args.no_validation,
+                                      layer_aware=not args.whole_model)
         # Do not truncate a prior run's detector log when resuming from its last
         # checkpoint. New runs still start with a fresh config header.
         defense = FedShieldDefense(args.clients, detector_cfg,
