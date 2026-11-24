@@ -1,4 +1,4 @@
-# Tested with Python 3.12.3 on Linux (see README.md "Setup and first checks").
+# Tested with Python 3.12.3 on Linux (see the Quick start in the top-level README.md).
 # Install: pip install -r requirements.txt
 torch==2.7.0
 torchvision==0.22.0

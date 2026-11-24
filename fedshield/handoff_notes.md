@@ -1,13 +1,13 @@
 # FedShield project handoff
 
-This folder contains the Level 1 MNIST baseline, the Level 2 FedAvg baseline, and a ten-client Level 3 federated learning experiment with malicious-client detection and defense. The work is split between Yateeka and Jessie as described below. Level 1, Level 2, synthetic detector checks, and multiple Level 3 runs have completed on CPU. CUDA/PyTorch 2.7.0 verification remains outstanding.
+This folder contains the Level 1 MNIST baseline, the Level 2 FedAvg baseline, and a ten-client Level 3 federated learning experiment with malicious-client detection and defense. The work is split between Yateeka and Jessie as described below. Level 1, Level 2, synthetic detector checks, and multiple Level 3 runs have completed. Level 3 with the integrated `malicious_client.py` has been verified on a CUDA GPU with PyTorch 2.7.0 (see `DEMO_RUNBOOK.md`).
 
 ## Progress and next milestone
 
 Yateeka has run the following checks locally on a Mac:
 
 - `python3 test_detector_synthetic.py` — all listed checks passed: five synthetic detector scenarios, late-onset exclusion, benign false-positive check, invalid-update rejection, validation evidence, threshold calibration, and reproducible split/no-leakage check. These are component-level synthetic checks, not evidence of performance on a federated training run.
-- `python3 level1_centralized.py --epochs 5 --seed 42` — completed with **99.04% final test accuracy**. The checkpoint saved to `checkpoints/centralized_mnist.pt` and the reload accuracy check passed.
+- `python3 level1_centralized.py --epochs 5 --seed 42` — first run (Mac, CPU): 99.04% test accuracy from the last epoch. Rerun on Nov 20 (Linux, GTX 1080 Ti, torch 2.7.0) after switching to best-epoch selection: the lowest validation loss was at epoch 4, and that checkpoint scores **98.97% test accuracy** (last epoch: 98.98%). It is saved to `checkpoints/centralized_mnist_best.pt`, and `--eval-only` reproduces 98.97%.
 
 Jessie has run Level 2 on Linux (CPU only, Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4):
 
@@ -15,13 +15,13 @@ Jessie has run Level 2 on Linux (CPU only, Python 3.12.3, torch 2.7.0, torchvisi
 - `python3 level2_fedavg.py --eval-only` — reloaded the best checkpoint and reproduced 98.62%.
 - `--resume` was checked by stopping after round 2 and resuming to round 3; round 3 matched the uninterrupted run exactly.
 
-The Level 3 defended runner is implemented and integrated in `level3_fedshield.py`. It connects local client training, detector validation-loss scoring, configurable attacks, guarded aggregation, clipping, metrics, and best/last checkpoints. Results from the sign-flip, label-flip, late-onset, and benign CPU runs are summarized below and in `DEMO_RUNBOOK.md`.
+The Level 3 defended runner is implemented and integrated in `level3_fedshield.py`. It connects local client training, detector validation-loss scoring, guarded aggregation, clipping, metrics, and best/last checkpoints. The malicious client's upload comes from `malicious_client.generate_malicious_update()` (the course-required interface), which the runner calls from `--onset` on. Results from the sign-flip, label-flip, late-onset, and benign CPU runs are summarized below and in `DEMO_RUNBOOK.md`.
 
 Integrated evaluation found a meaningful limitation: the seeded benign run flagged client 5 in round 2, and the round-10 label-flip and sign-flip runs also flagged client 5 in round 2 before correctly flagging attacker 3 in round 10. Thus the one-round attack was caught with zero delay and rejected, but the repeated-evidence malicious-client verdict remained empty. The default sign-flip run (onset round 2) had no false-positive flags and rejected all nine malicious updates. These results should be reported as observed; they do not establish general performance across seeds or attack identities.
 
 See [`FIRST_RUN_REPORT.md`](FIRST_RUN_REPORT.md) for the complete first-run findings, [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) for reproducible commands, [`results/level3_cpu_runs.json`](results/level3_cpu_runs.json) for the recorded results, and [`plots/fedshield_results.png`](plots/fedshield_results.png) for the accuracy/detection summary. Regenerate the plot with `python3 plot_results.py` (requires Matplotlib).
 
-For evaluation hygiene, use the held-out validation set for training-time checks and detector scoring, and reserve test accuracy for the final evaluation. `level1_centralized.py` currently prints test accuracy after each epoch; avoid using those intermediate test results to choose settings or checkpoints. The reported 99.04% is the final epoch's test result from the current run.
+For evaluation hygiene, use the held-out validation set for training-time checks and detector scoring, and reserve test accuracy for the final evaluation. `level1_centralized.py` now evaluates the test set only after training and selects its saved model by validation loss, like Level 2.
 
 ## Work completed by Yateeka so far
 
@@ -29,13 +29,13 @@ The following Yateeka-owned modules currently have implementation in the workspa
 
 - **Foundations — `common.py`:** reproducible Python/NumPy/PyTorch seeding, device selection, the shared `SmallCNN`, model evaluation, and checkpoint save/load helpers.
 - **Data preparation — `data_utils.py`:** seeded held-out validation split, split-index saving, loader construction using the instructor template, and a train/validation leakage check. The validation set is intended for server-side scoring; test data is kept for final accuracy.
-- **Level 1 — `level1_centralized.py`:** centralized MNIST training/evaluation, validation tracking, checkpoint saving and reload check. It uses `data_utils.py` for the reproducible data split.
+- **Level 1 — `level1_centralized.py`:** centralized MNIST training/evaluation, validation tracking, best-epoch checkpoint (lowest validation loss) plus a last-epoch checkpoint for `--resume`, `--eval-only`, and `--device`. It uses `data_utils.py` for the reproducible data split.
 - **Security and defense — `fedshield_detector.py`:** parameter-delta validation; per-layer magnitude and cosine anomaly scores; optional validation-loss evidence; single-client round flagging; immediate exclusion of flagged/invalid updates; suspicion history, per-round `FLAGGED client k in round r` output, a summary of all clients flagged at least once, and the separate final repeated-evidence verdict.
 - **Testing and reporting — `detection_metrics.py`:** per-run detection/false-positive metrics, benign-run threshold calibration, attack/onset/identity/seed sweep support, and per-attack summaries.
 - **Synthetic tests — `test_detector_synthetic.py`:** synthetic attack, benign false-positive, malformed-update, validation-evidence, calibration, and data-split checks; all pass. Integrated label-flip and simulator runs are recorded in the Level 3 results.
 - **Instructor template — `dataloader4level1.py`:** present in the folder. Keep the course-provided file unchanged.
 
-**Status:** the defended training entry point is `level3_fedshield.py`. CPU integration runs are complete for benign, sign-flip onset 2, sign-flip onset 10, and label-flip onset 10. The target CUDA/PyTorch 2.7.0 run and multi-seed/attack sweep remain outstanding.
+**Status:** the defended training entry point is `level3_fedshield.py`. CPU integration runs (PyTorch 2.15.0, earlier inline attack code) are complete for benign, sign-flip onset 2, sign-flip onset 10, and label-flip onset 10. GPU runs with PyTorch 2.7.0 and the integrated `malicious_client.py` are recorded in `DEMO_RUNBOOK.md`. The multi-seed/attack sweep remains outstanding.
 
 ## Work completed by Jessie so far: Level 2 federated baseline
 
@@ -74,9 +74,11 @@ Jessie owns the federated-learning simulator and the parts that connect it to th
    - Pass those per-client deltas as `val_deltas` to `inspect_round(round_idx, global_state, client_states, val_deltas)`.
    - Use the held-out validation set from `data_utils.py`; do not use the test set to score clients or calibrate the detector.
 
-4. **Malicious-client attack module** — *implemented as runner options in `level3_fedshield.py`.*
-   - Implement four configurable attack modes and make attack identity, onset round, and malicious client ID configurable.
-   - Keep attack behavior reproducible under the run seed. Coordinate the mode names and update transformations with the synthetic scenarios in `test_detector_synthetic.py`.
+4. **Malicious-client attack module** — *implemented in `malicious_client.py` and called by `level3_fedshield.py`.*
+   - `generate_malicious_update(client_model_state_dict, local_dataset, device)` uses the course signature and contains the `# === MALICIOUS CLIENT LOGIC HERE ===` marker. That file is the only place the TA needs to change; `level3_fedshield.py` simply calls the function.
+   - Modes: the four proposal attacks (`noise`, `scale`/`sign_flip`, `free_ride`, `label_flip`) plus robustness modes `zero_weights`, `random_weights`, `nan`, `grad_ascent`, and `layer_only`. The runner sets the mode, seed, and optimizer settings through `malicious_client.configure()`; strengths live in `ATTACK_CONFIG`.
+   - The runner controls onset and malicious client ID. Uploads are moved to CPU and cast to the model's dtype; malformed uploads or exceptions count as invalid updates. A TA replacement that defines only `generate_malicious_update` runs as the `custom` attack.
+   - Attacks are seeded per call, and `--resume` continues the same seed sequence.
 
 5. **Round-by-round detector integration** — *implemented in `level3_fedshield.py`.*
    - Keep one `FedShieldDefense` instance per run and call `inspect_round` once for each round, supplying the global state, one uploaded state (or `None`) per client, and validation deltas when enabled.
@@ -87,7 +89,7 @@ Jessie owns the federated-learning simulator and the parts that connect it to th
 6. **Evaluation, tests, and demo** — *partially complete.*
    - Centralized, FedAvg, benign, and defended CPU outcomes are recorded; the Level 3 plot and demo runbook are in the repo.
    - Synthetic tests and checkpoint reload checks pass. Run attack/benign sweeps across more seeds and review detector failure cases before drawing broad conclusions.
-   - GPU/PyTorch 2.7.0 verification and the joint demo rehearsal remain to be done in the target environment.
+   - GPU/PyTorch 2.7.0 runs with the integrated attack module, the course-template substitution test, and a resume check are recorded in `DEMO_RUNBOOK.md`. The joint demo rehearsal remains to be done.
 
 ## Shared responsibilities
 
@@ -105,13 +107,14 @@ Yateeka and Jessie should jointly review the scoring interface and security-test
 | `fedshield_detector.py` | Yateeka | Layer-aware detection, per-round flag output, all-flag summary, and repeated-evidence verdict; synthetic checks passed. |
 | `detection_metrics.py` | Yateeka | Detection metrics, threshold calibration, and sweep helpers; integrated runs recorded. |
 | `test_detector_synthetic.py` | Yateeka | Synthetic detector and split checks; passed. Integrated checks are recorded separately. |
-| `level3_fedshield.py` | Shared | Level 3 defended MNIST runner, attacks, guarded aggregation, validation evidence, and best/last checkpoints; CPU runs completed. |
+| `level3_fedshield.py` | Shared | Level 3 defended MNIST runner: calls `malicious_client.py`, validation evidence, detector, clipping, guarded aggregation, and best/last checkpoints; CPU and GPU runs completed. |
+| `malicious_client.py` | Jessie | Course-signature `generate_malicious_update` with the demo-day marker; four proposal attacks plus five robustness modes; TA-replaceable. |
 | `DEMO_RUNBOOK.md` | Shared | Reproducible demo commands and observed outcomes. |
 | `FIRST_RUN_REPORT.md` | Shared | Report page for the first integrated Level 3 run set. |
 | `plot_results.py`, `results/level3_cpu_runs.json` | Shared | Reproducible plot source and run metrics. |
 | `plots/fedshield_results.png` | Shared | Summary plot generated from saved run results. |
 | `dataloader4level1.py` | Course-provided | Course-provided data loader; preserve unchanged. |
-| `checkpoints/`, `logs/` | Shared | Output directories for model checkpoints and run logs. Level 1: `centralized_mnist.pt`; Level 2: `fedavg_mnist_best.pt`, `fedavg_mnist_last.pt`; Level 3: `fedshield_mnist_best.pt`, `fedshield_mnist_last.pt`, plus named benign/late-onset scenario checkpoints and JSON summaries. |
+| `checkpoints/`, `logs/` | Shared | Output directories for model checkpoints and run logs. Level 1: `centralized_mnist_best.pt` (best epoch), `centralized_mnist_last.pt` (resume); Level 2: `fedavg_mnist_best.pt`, `fedavg_mnist_last.pt`; Level 3: `fedshield_mnist_best.pt`, `fedshield_mnist_last.pt`, plus named benign/late-onset scenario checkpoints and JSON summaries. |
 
 ## Setup and first checks
 
@@ -157,4 +160,4 @@ python3 level3_fedshield.py --attack none --device auto
 python3 level3_fedshield.py --eval-only
 ```
 
-Supported attacks are `none`, `noise`, `sign_flip`, `scale`, `free_ride`, and `label_flip`. Client IDs are zero-indexed and rounds are one-indexed; attack onset must be round 2 or later. `--device auto` selects CUDA when available. Random tensor generation is compatible with the project’s PyTorch 2.7.0 pin. The best defended model is selected by server validation loss and saved to `checkpoints/fedshield_mnist_best.pt`; the latest round, training history, and detector state are saved to `checkpoints/fedshield_mnist_last.pt` for `--resume`. Test accuracy is reported after training. Logs and a JSON run summary are written under `logs/`.
+Supported attacks are `none` plus every mode in `malicious_client.ATTACK_MODES`: `noise`, `scale`, `sign_flip`, `free_ride`, `label_flip`, `zero_weights`, `random_weights`, `nan`, `grad_ascent`, and `layer_only`. The malicious client trains honestly before `--onset`, then uploads `malicious_client.generate_malicious_update()`. Client IDs are zero-indexed and rounds are one-indexed; attack onset must be round 2 or later. `--device auto` selects CUDA when available. Random tensor generation is compatible with the project’s PyTorch 2.7.0 pin. The best defended model is selected by server validation loss and saved to `checkpoints/fedshield_mnist_best.pt`; the latest round, training history, and detector state are saved to `checkpoints/fedshield_mnist_last.pt` for `--resume`; this round-10 model is the one the course evaluates after live training. Test accuracy is reported after training. Logs and a JSON run summary are written under `logs/`.
