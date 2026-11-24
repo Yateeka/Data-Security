@@ -66,10 +66,14 @@ def configure(**settings) -> Dict:
     return dict(ATTACK_CONFIG)
 
 
-def reset_call_count() -> None:
-    """Restart the per-call seed sequence (call at the start of every run)."""
+def reset_call_count(value: int = 0) -> None:
+    """Restart the per-call seed sequence (call at the start of every run).
+
+    When resuming a run, pass the number of attack calls already made so the
+    remaining rounds use the same seeds as an uninterrupted run.
+    """
     global _call_count
-    _call_count = 0
+    _call_count = value
 
 
 class FlippedLabels(Dataset):

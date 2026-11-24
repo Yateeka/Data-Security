@@ -5,40 +5,45 @@ Examples (run from this directory):
     python level3_fedshield.py --attack label_flip --onset 10 --device cuda
     python level3_fedshield.py --attack none
     python level3_fedshield.py --eval-only
+    python level3_fedshield.py --attack sign_flip --defense off      # plain FedAvg baseline
+    python level3_fedshield.py --attack sign_flip --no-validation    # ablation: layer scores only
+    python level3_fedshield.py --attack sign_flip --no-clip          # ablation: no norm clipping
 
 The held-out validation set drives detector evidence and best-checkpoint
 selection. The test set is evaluated only after training is complete.
+
+Conditions: --defense on (default) runs the full FedShield pipeline (detector
++ exclusion + clipping). --defense off is the undefended baseline: plain FedAvg
+over every upload, no detector. --no-validation and --no-clip remove one
+defense component each for the ablation study. Non-default conditions get
+their own checkpoint and log names so they never overwrite the main run.
+
+The malicious client's behavior comes ONLY from malicious_client.py
+(generate_malicious_update). This script decides WHEN it attacks: the malicious
+client trains honestly before --onset and calls generate_malicious_update from
+round --onset on. On demo day the TA can replace malicious_client.py; if the
+replacement has no ATTACK_MODES/configure(), run with the default --attack.
 """
 import argparse
 import json
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
-from torch.utils.data import Dataset
 
 from common import SmallCNN, evaluate, get_device, load_checkpoint, save_checkpoint, set_seed
 from data_utils import check_no_leakage, make_loaders
 from fedshield_detector import DetectorConfig, FedShieldDefense
 from fl_core import fedavg, local_train, partition_clients
+import malicious_client
 
 
-BEST_CKPT = "checkpoints/fedshield_mnist_best.pt"
-LAST_CKPT = "checkpoints/fedshield_mnist_last.pt"
-ATTACKS = ("none", "noise", "sign_flip", "scale", "free_ride", "label_flip")
-
-
-class LabelFlipDataset(Dataset):
-    """Client view that maps every MNIST label y to 9-y during local training."""
-    def __init__(self, dataset):
-        self.dataset = dataset
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, index):
-        x, y = self.dataset[index]
-        return x, 9 - int(y)
+CKPT_PREFIX = "checkpoints/fedshield_mnist"   # + "<variant>_best.pt" / "_last.pt"
+# Attack modes come from malicious_client.py. A TA replacement file may only
+# define generate_malicious_update(), so fall back to a single "custom" mode.
+_MODES = tuple(getattr(malicious_client, "ATTACK_MODES", ()))
+ATTACKS = ("none",) + (_MODES or ("custom",))
+DEFAULT_ATTACK = "sign_flip" if "sign_flip" in _MODES else ATTACKS[1]
 
 
 def resolve_device(choice: str) -> torch.device:
@@ -53,40 +58,40 @@ def _clone_state(state: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in state.items()}
 
 
-def _attack_update(global_state, trained_state, attack: str, seed: int):
-    """Transform a malicious client's uploaded model update reproducibly."""
-    if attack == "none" or attack == "label_flip":
-        return _clone_state(trained_state)
-    if attack == "free_ride":
-        return _clone_state(global_state)
+def _sanitize_upload(state, global_state) -> Optional[Dict[str, torch.Tensor]]:
+    """Turn whatever the malicious client returned into a CPU state_dict.
 
-    gen = torch.Generator(device="cpu").manual_seed(seed)
-    out = {}
-    floating = [k for k, v in global_state.items() if torch.is_floating_point(v)]
-    if attack == "noise":
-        delta_norm_sq = sum(
-            float((trained_state[k].detach().cpu().float() - global_state[k].detach().cpu().float()).pow(2).sum())
-            for k in floating
-        )
-        count = sum(global_state[k].numel() for k in floating)
-        noise_std = max((delta_norm_sq ** 0.5) / max(count, 1) ** 0.5 * 1.5, 1e-4)
+    Keeps only the model's keys and casts tensors to the global dtype. Anything
+    unusable becomes None, which the detector rejects as an invalid update
+    (missing keys, wrong shapes and NaN/Inf are also rejected there).
+    """
+    if not isinstance(state, dict):
+        return None
+    clean = {}
     for key, g in global_state.items():
-        if not torch.is_floating_point(g):
-            out[key] = trained_state[key].detach().cpu().clone()
-            continue
-        g_cpu = g.detach().cpu()
-        delta = trained_state[key].detach().cpu() - g_cpu
-        if attack == "sign_flip":
-            new_delta = -5.0 * delta
-        elif attack == "scale":
-            new_delta = 10.0 * delta
-        elif attack == "noise":
-            noise = torch.randn(delta.shape, generator=gen, dtype=delta.dtype, device="cpu") * noise_std
-            new_delta = noise
-        else:
-            raise ValueError(f"unsupported attack: {attack}")
-        out[key] = (g_cpu + new_delta).to(dtype=g.dtype)
-    return out
+        if key not in state:
+            continue  # detector reports missing_key
+        try:
+            v = torch.as_tensor(state[key])
+            clean[key] = v.detach().cpu().to(dtype=g.dtype).clone()
+        except (TypeError, RuntimeError, ValueError):
+            return None
+    return clean
+
+
+def _usable_for_fedavg(state, global_state) -> bool:
+    """Plain FedAvg has no defense, but it can only average uploads with the
+    right keys and shapes. NaN/Inf values are NOT filtered (no defense)."""
+    return state is not None and all(
+        k in state and tuple(state[k].shape) == tuple(g.shape)
+        for k, g in global_state.items())
+
+
+def _variant_tag(args) -> str:
+    """'' for the full defense; otherwise a suffix naming the condition."""
+    if args.defense == "off":
+        return "_nodefense"
+    return ("_noval" if args.no_validation else "") + ("_noclip" if args.no_clip else "")
 
 
 def _clip_update(global_state, client_state, max_norm: float):
@@ -112,6 +117,8 @@ def _clip_update(global_state, client_state, max_norm: float):
 @torch.no_grad()
 def _validation_delta(model, global_state, client_state, val_loader, device, base_loss):
     """Measure validation loss change after applying one candidate update."""
+    if client_state is None:
+        return float("inf")
     try:
         model.load_state_dict(client_state)
         loss, _ = evaluate(model, val_loader, device)
@@ -123,6 +130,8 @@ def _validation_delta(model, global_state, client_state, val_loader, device, bas
 
 
 def _detector_state(defense):
+    if defense is None:
+        return None
     return dict(suspicion=defense.suspicion, flag_counts=defense.flag_counts,
                 history=defense.history)
 
@@ -144,13 +153,22 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--val-size", type=int, default=500)
-    ap.add_argument("--attack", choices=ATTACKS, default="sign_flip")
+    ap.add_argument("--attack", choices=ATTACKS, default=DEFAULT_ATTACK,
+                    help="mode passed to malicious_client.configure(); 'none' = no attacker")
     ap.add_argument("--onset", type=int, default=2, help="1-indexed first attack round (>=2 for attacks)")
     ap.add_argument("--malicious-id", type=int, default=3, help="0-indexed malicious client")
     ap.add_argument("--threshold", type=float, default=8.0)
     ap.add_argument("--clip-norm", type=float, default=5.0)
-    ap.add_argument("--best-ckpt", default=BEST_CKPT)
-    ap.add_argument("--last-ckpt", default=LAST_CKPT)
+    ap.add_argument("--defense", choices=["on", "off"], default="on",
+                    help="on = FedShield (default); off = plain FedAvg baseline, no detector")
+    ap.add_argument("--no-validation", action="store_true",
+                    help="ablation: detector uses layer-aware scores only")
+    ap.add_argument("--no-clip", action="store_true",
+                    help="ablation: skip norm clipping of accepted updates")
+    ap.add_argument("--best-ckpt", default=None,
+                    help="default: checkpoints/fedshield_mnist<variant>_best.pt")
+    ap.add_argument("--last-ckpt", default=None,
+                    help="default: checkpoints/fedshield_mnist<variant>_last.pt")
     ap.add_argument("--log-path", default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--eval-only", action="store_true")
@@ -167,6 +185,13 @@ def main():
         ap.error("--onset cannot be later than --rounds")
     if args.clip_norm <= 0:
         ap.error("--clip-norm must be positive")
+    if args.defense == "off" and (args.no_validation or args.no_clip):
+        ap.error("--no-validation/--no-clip are ablations of the defense; "
+                 "do not combine them with --defense off")
+    tag = _variant_tag(args)
+    args.best_ckpt = args.best_ckpt or f"{CKPT_PREFIX}{tag}_best.pt"
+    args.last_ckpt = args.last_ckpt or f"{CKPT_PREFIX}{tag}_last.pt"
+    defended = args.defense == "on"
 
     set_seed(args.seed)
     device = resolve_device(args.device)
@@ -186,7 +211,9 @@ def main():
                   clients=args.clients, partition=args.partition, alpha=args.alpha,
                   seed=args.seed, local_epochs=args.local_epochs, lr=args.lr,
                   momentum=args.momentum, clip_norm=args.clip_norm,
-                  threshold=args.threshold, val_size=args.val_size)
+                  threshold=args.threshold, val_size=args.val_size,
+                  defense=args.defense, use_validation=not args.no_validation,
+                  clip=not args.no_clip)
 
     if args.eval_only:
         best_model, best_meta = load_checkpoint(args.best_ckpt, device=device)
@@ -197,14 +224,19 @@ def main():
         print(f"last checkpoint round {last_meta.get('round')}: test accuracy={last_acc:.4f}")
         return
 
-    log_path = args.log_path or (
-        f"logs/fedshield_{args.attack}_{args.partition}_seed{args.seed}_onset{args.onset}.jsonl"
-    )
-    detector_cfg = DetectorConfig(threshold=args.threshold, use_validation=True)
-    # Do not truncate a prior run's detector log when resuming from its last
-    # checkpoint. New runs still start with a fresh config header.
-    defense = FedShieldDefense(args.clients, detector_cfg,
-                               log_path=None if args.resume else log_path)
+    run_name = f"fedshield_{args.attack}_{args.partition}_seed{args.seed}_onset{args.onset}{tag}"
+    log_path = args.log_path or f"logs/{run_name}.jsonl"
+    print(f"condition: " + ("FedShield defense" if defended else "plain FedAvg (no defense)")
+          + (" | no validation evidence" if args.no_validation else "")
+          + (" | no clipping" if args.no_clip else ""))
+    defense = None
+    if defended:
+        detector_cfg = DetectorConfig(threshold=args.threshold,
+                                      use_validation=not args.no_validation)
+        # Do not truncate a prior run's detector log when resuming from its last
+        # checkpoint. New runs still start with a fresh config header.
+        defense = FedShieldDefense(args.clients, detector_cfg,
+                                   log_path=None if args.resume else log_path)
     global_state = start_state
 
     if args.resume:
@@ -216,51 +248,82 @@ def main():
         global_state = _clone_state(model.state_dict())
         start_round = int(meta["round"]) + 1
         history, best_val = meta["history"], meta["best_val_loss"]
-        _restore_detector(defense, meta["detector_state"])
-        if not os.path.exists(log_path):
-            os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
-            with open(log_path, "w") as f:
-                f.write(json.dumps({"config": detector_cfg.__dict__, "resumed": True}) + "\n")
-        defense.log_path = log_path
+        if defended:
+            _restore_detector(defense, meta["detector_state"])
+            if not os.path.exists(log_path):
+                os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+                with open(log_path, "w") as f:
+                    f.write(json.dumps({"config": detector_cfg.__dict__, "resumed": True}) + "\n")
+            defense.log_path = log_path
         print(f"resumed after round {meta['round']} (best val loss {best_val:.4f})")
+
+    if args.attack != "none":
+        if hasattr(malicious_client, "configure"):
+            malicious_client.configure(mode=args.attack, seed=args.seed,
+                                       local_epochs=args.local_epochs, lr=args.lr,
+                                       momentum=args.momentum)
+        else:
+            print("malicious_client.py has no configure(); using its "
+                  "generate_malicious_update() as provided")
+        if hasattr(malicious_client, "reset_call_count"):
+            # Attack calls already made before start_round (non-zero on --resume).
+            malicious_client.reset_call_count(max(0, start_round - args.onset))
+        print(f"malicious client {args.malicious_id}: honest until round "
+              f"{args.onset - 1}, then malicious_client.generate_malicious_update")
 
     for rnd in range(start_round, args.rounds + 1):
         client_states = []
         is_attack_round = args.attack != "none" and rnd >= args.onset
         for cid, data in enumerate(clients):
-            client_data = data
-            if is_attack_round and cid == args.malicious_id and args.attack == "label_flip":
-                client_data = LabelFlipDataset(data)
-            uploaded = local_train(
-                model, global_state, client_data, args.local_epochs, args.lr, args.momentum,
-                seed=args.seed * 10_000 + rnd * 100 + cid, device=device)
-            if is_attack_round and cid == args.malicious_id and args.attack != "label_flip":
-                uploaded = _attack_update(global_state, uploaded, args.attack,
-                                          args.seed * 1_000_000 + rnd * 100 + cid)
+            if is_attack_round and cid == args.malicious_id:
+                # Malicious upload: the attack itself lives in malicious_client.py.
+                global_copy = {k: v.clone().to(device) for k, v in global_state.items()}
+                try:
+                    raw = malicious_client.generate_malicious_update(global_copy, data, device)
+                except Exception as exc:  # a crashing attack must not stop training
+                    print(f"round {rnd}: malicious client {cid} raised "
+                          f"{type(exc).__name__}: {exc}; treating upload as missing")
+                    raw = None
+                uploaded = _sanitize_upload(raw, global_state)
+            else:
+                uploaded = local_train(
+                    model, global_state, data, args.local_epochs, args.lr, args.momentum,
+                    seed=args.seed * 10_000 + rnd * 100 + cid, device=device)
             client_states.append(uploaded)
 
-        model.load_state_dict(global_state)
-        base_val_loss, _ = evaluate(model, val_loader, device)
-        val_deltas = [
-            _validation_delta(model, global_state, st, val_loader, device, base_val_loss)
-            for st in client_states
-        ]
-        result = defense.inspect_round(rnd, global_state, client_states, val_deltas)
+        if defended:
+            val_deltas = None
+            if not args.no_validation:
+                model.load_state_dict(global_state)
+                base_val_loss, _ = evaluate(model, val_loader, device)
+                val_deltas = [
+                    _validation_delta(model, global_state, st, val_loader, device, base_val_loss)
+                    for st in client_states
+                ]
+            result = defense.inspect_round(rnd, global_state, client_states, val_deltas)
+            accepted_ids, flagged_ids, invalid_ids = (
+                result.accepted_ids, result.flagged_ids, result.invalid_ids)
+            scores, reasons = result.scores, result.reasons
+        else:
+            # Plain FedAvg: average every upload it can; nothing is flagged.
+            accepted_ids = [i for i, st in enumerate(client_states)
+                            if _usable_for_fedavg(st, global_state)]
+            invalid_ids = [i for i in range(len(client_states)) if i not in accepted_ids]
+            flagged_ids, scores, reasons = [], None, {}
 
-        if result.accepted_ids:
-            accepted = [_clip_update(global_state, client_states[i], args.clip_norm)
-                        for i in result.accepted_ids]
-            accepted_sizes = [sizes[i] for i in result.accepted_ids]
-            global_state = fedavg(accepted, accepted_sizes)
+        if accepted_ids:
+            accepted = [client_states[i] if args.no_clip or not defended
+                        else _clip_update(global_state, client_states[i], args.clip_norm)
+                        for i in accepted_ids]
+            global_state = fedavg(accepted, [sizes[i] for i in accepted_ids])
         else:
             print(f"round {rnd}: no accepted updates; retaining previous global model")
 
         model.load_state_dict(global_state)
         val_loss, val_acc = evaluate(model, val_loader, device)
         history.append(dict(round=rnd, val_loss=val_loss, val_acc=val_acc,
-                            accepted=result.accepted_ids, flagged=result.flagged_ids,
-                            invalid=result.invalid_ids, scores=result.scores,
-                            reasons=result.reasons))
+                            accepted=accepted_ids, flagged=flagged_ids,
+                            invalid=invalid_ids, scores=scores, reasons=reasons))
         improved = val_loss < best_val
         if improved:
             best_val = val_loss
@@ -271,26 +334,29 @@ def main():
                         best_val_loss=best_val, run_config=config,
                         detector_state=_detector_state(defense))
         print(f"round {rnd}/{args.rounds} val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
-              f" accepted={len(result.accepted_ids)} flagged={result.flagged_ids}"
+              f" accepted={len(accepted_ids)} flagged={flagged_ids}"
               f"{' *best*' if improved else ''}")
 
-    verdict = defense.final_verdict()
-    from detection_metrics import run_metrics
-    metrics = run_metrics(defense.history,
-                          args.malicious_id if args.attack != "none" else None,
-                          args.onset if args.attack != "none" else None,
-                          verdict)
+    verdict, metrics = None, None
+    if defended:
+        verdict = defense.final_verdict()
+        from detection_metrics import run_metrics
+        metrics = run_metrics(defense.history,
+                              args.malicious_id if args.attack != "none" else None,
+                              args.onset if args.attack != "none" else None,
+                              verdict)
     best_model, best_meta = load_checkpoint(args.best_ckpt, device=device)
     _, best_test_acc = evaluate(best_model, test_loader, device)
     _, final_test_acc = evaluate(model, test_loader, device)
     print(f"best checkpoint (round {best_meta['round']}): test accuracy={best_test_acc:.4f}")
     print(f"last checkpoint (round {args.rounds}): test accuracy={final_test_acc:.4f}")
-    print(f"detection metrics: {json.dumps(metrics, sort_keys=True)}")
+    if defended:
+        print(f"detection metrics: {json.dumps(metrics, sort_keys=True)}")
+    else:
+        print("detection metrics: none (no defense)")
 
     os.makedirs("logs", exist_ok=True)
-    result_path = (
-        f"logs/fedshield_{args.attack}_{args.partition}_seed{args.seed}_onset{args.onset}.json"
-    )
+    result_path = f"logs/{run_name}.json"
     with open(result_path, "w") as f:
         json.dump(dict(config=config, history=history, verdict=verdict,
                        metrics=metrics, best_round=best_meta["round"],
