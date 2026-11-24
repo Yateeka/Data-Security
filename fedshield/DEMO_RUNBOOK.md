@@ -77,11 +77,19 @@ python3 level3_fedshield.py --attack none                                     # 
 
 Each run writes `logs/fedshield_<attack>_<partition>_seed<seed>_onset<onset>.json` (summary) and `.jsonl` (per-round detector log). These scenario runs also overwrite `checkpoints/fedshield_mnist_{best,last}.pt` unless you pass `--best-ckpt` and `--last-ckpt`.
 
-Observed results (seed 42, GPU, torch 2.7.0):
+Observed results (seed 42, GPU, torch 2.7.0, calibrated threshold 14.0):
 
-- **Label flip, onset 10:** client 3 was flagged and excluded in round 10 (1/1 rejected). Client 5 was also falsely flagged in round 2. The final verdict was empty because it currently requires flags in at least two rounds; client 3 still appears in `Clients flagged at least once: [3, 5]`. Final model: 98.76%.
-- **NaN:** all 9 malicious uploads were rejected as invalid (`nan_or_inf`), and training continued without errors. Client 5 was again falsely flagged in round 2, and the final verdict was client 3. Final model: 98.72%.
-- **Benign:** the earlier recorded run also flagged client 5 in round 2. This false positive is the reason the detection threshold is still being tuned.
+- **Label flip, onset 10:** client 3 was flagged and excluded in round 10 (1/1 rejected), no other client was flagged, and the final verdict was client 3 (strong single-round evidence). Final model: 98.75%.
+- **Sign flip, onset 10:** same outcome: client 3 flagged in round 10 only, final verdict client 3. Final model: 98.75%.
+- **Benign:** no client was flagged in any round, and the final verdict was "no malicious client identified". Final model: 98.76%.
+- **NaN** (earlier run, threshold 8.0): all 9 malicious uploads were rejected as invalid (`nan_or_inf`), training continued without errors, and the final verdict was client 3.
+
+### How the threshold and verdict rule were set
+
+Full calibration logs, tables, and a script that recomputes the numbers: [`results/calibration/`](results/calibration/README.md) (`python calibrate_threshold.py`).
+
+- **Threshold 14.0:** calibrated on benign development runs only (seeds 101–105, never seed 42 or test results). Those runs used `--threshold 1e9` so nothing was excluded, which recorded every honest client's score in 50 rounds. The highest was 11.23; `detection_metrics.calibrate_threshold` multiplies by a 1.25 safety margin, giving 14.04. The earlier placeholder 8.0 flagged client 5 in round 2 (score 10.2) as a false positive.
+- **Verdict:** the top-suspicion client is named malicious if it was excluded in at least 2 rounds, or excluded once with strong evidence (score ≥ 2 × threshold = 28, or a malformed upload). On development seed 101, the attacker's weakest score across all 8 attacks was 45.6 (`layer_only`), while honest clients stayed at or below 5.1. So an attack in round 10 alone is still identified, while an honest client that only just crosses the threshold is not.
 
 ## 5. Baseline and ablation conditions
 
@@ -93,7 +101,7 @@ python3 level3_fedshield.py --attack sign_flip --no-clip          # no norm clip
 
 Each condition writes its own checkpoints (`checkpoints/fedshield_mnist_nodefense_{best,last}.pt`, `_noval_`, `_noclip_`) and logs (`..._onset2_nodefense.json`, `_noval`, `_noclip`). `--defense off` cannot be combined with the ablation switches. The checkpoint name does not include the attack, so two runs of the same condition overwrite each other's checkpoints; pass `--best-ckpt`/`--last-ckpt` to keep both.
 
-Observed (seed 42, GPU, torch 2.7.0, malicious client 3, onset 2):
+Observed (seed 42, GPU, torch 2.7.0, malicious client 3, onset 2; run with the earlier threshold 8.0, to be regenerated in the final sweep):
 
 | Condition | Attack | Final test acc | Malicious rejected | False positives |
 | --- | --- | --- | --- | --- |
@@ -121,5 +129,5 @@ To continue an interrupted run, repeat the original command with `--resume`. The
 ## 7. Recorded results and limitations
 
 - `results/level3_cpu_runs.json`, `plots/fedshield_results.png`, `FIRST_RUN_REPORT.md`, and the committed `logs/fedshield_*` files come from the first CPU run set. That set used PyTorch 2.15.0 and the earlier attack code built into `level3_fedshield.py`. Its numbers are close to, but not identical with, runs of the current code on torch 2.7.0. Regenerate these files with the current code before final reporting.
-- The final verdict misses attacks that appear in only one round (for example, onset 10), and the benign false positive on client 5 in round 2 is still open. Both are being addressed in the detector settings.
+- The threshold was calibrated on 5 benign IID runs. A non-IID split or a weaker, stealthier attack (score between 14 and 28, appearing only in the last round) would be excluded but not named in the final verdict.
 - All results come from a single seed and an IID split. Run multiple seeds, attack types, and malicious-client IDs before making broad performance claims.

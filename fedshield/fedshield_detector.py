@@ -42,10 +42,12 @@ MAD_TO_SIGMA = 1.4826  # makes MAD comparable to a std-dev for Gaussian data
 # --------------------------------------------------------------------------- #
 @dataclass
 class DetectorConfig:
-    # Flag threshold on the combined anomaly score. PLACEHOLDER: choose it from
-    # benign development runs with `detection_metrics.calibrate_threshold`
-    # (never from test-set outcomes).
-    threshold: float = 8.0
+    # Flag threshold on the combined anomaly score, calibrated on BENIGN
+    # development runs only (never on test outcomes): 5 benign runs, seeds
+    # 101-105, 10 rounds each, run with threshold=1e9 so nothing was excluded.
+    # The highest benign client score in those 50 rounds was 11.23;
+    # detection_metrics.calibrate_threshold (max x 1.25 margin) gives 14.04.
+    threshold: float = 14.0
     use_validation: bool = True      # ablation switch: layer-only vs layer+val
     val_weight: float = 1.0          # weight of the validation z-score
     # Near-zero norm rule: ||u_il|| < zero_norm_frac * median(norm of others)
@@ -58,7 +60,12 @@ class DetectorConfig:
     direct_flag_score: float = 1e3   # score given to near-zero-norm updates
     suspicion_cap: float = 50.0      # per-round cap so one huge score can't dominate
     suspicion_floor_frac: float = 0.5  # only score above this*threshold accumulates
-    min_flag_rounds: int = 2         # needed before a final verdict is issued
+    min_flag_rounds: int = 2         # repeated evidence: flagged in >= this many rounds
+    # Strong single-round evidence also yields a verdict, so an attack that
+    # starts in the last round is still identified: one flag whose score is
+    # >= strong_evidence_factor * threshold, or one malformed (invalid) upload.
+    # A benign client that only just crosses the threshold does not qualify.
+    strong_evidence_factor: float = 2.0
     max_flags_per_round: int = 1     # single-attacker assumption
 
 
@@ -281,17 +288,35 @@ class FedShieldDefense:
                 f.write(json.dumps(rec) + "\n")
         return res
 
-    def final_verdict(self) -> dict:
-        """Return both observed flags and the repeated-evidence verdict.
+    def strongest_flag_score(self, client: int) -> float:
+        """Highest score among rounds where `client` was excluded (inf if invalid)."""
+        best = 0.0
+        for rec in self.history:
+            if client in rec["invalid"]:
+                return float("inf")
+            if client in rec["flagged"]:
+                best = max(best, rec["scores"][client])
+        return best
 
-        `malicious_client` retains the conservative repeated-evidence rule.
-        `flagged_clients` records anyone excluded for an anomaly at least once,
-        which preserves detections when an attack starts near the end of a run.
+    def final_verdict(self) -> dict:
+        """Return both observed flags and the final malicious-client verdict.
+
+        The top-suspicion client is reported when it was excluded in at least
+        `min_flag_rounds` rounds (repeated evidence) OR excluded once with
+        strong evidence (score >= strong_evidence_factor * threshold, or an
+        invalid upload). `flagged_clients` lists everyone flagged at least once.
         """
         top = max(range(self.n), key=lambda i: self.suspicion[i])
-        ok = self.flag_counts[top] >= self.cfg.min_flag_rounds
+        strong = self.strongest_flag_score(top) >= self.cfg.strong_evidence_factor * self.cfg.threshold
+        ok = self.flag_counts[top] >= self.cfg.min_flag_rounds or (
+            self.flag_counts[top] >= 1 and strong)
         flagged_clients = sorted({i for rec in self.history for i in rec["flagged"]})
         print(f"Clients flagged at least once: {flagged_clients or 'none'}")
+        if ok:
+            print(f"Final verdict: client {top} is malicious "
+                  f"(flagged in {self.flag_counts[top]} round(s))")
+        else:
+            print("Final verdict: no malicious client identified")
         return dict(malicious_client=top if ok else None, top_candidate=top,
                     flagged_clients=flagged_clients,
                     suspicion=list(self.suspicion), flag_counts=list(self.flag_counts))

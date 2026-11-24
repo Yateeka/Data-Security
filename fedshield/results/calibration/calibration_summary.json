@@ -1,0 +1,138 @@
+{
+  "method": "threshold = max honest client score in benign development runs (seeds [101, 102, 103, 104, 105], --threshold 1e9, nothing excluded) x 1.25",
+  "margin": 1.25,
+  "benign_rounds": 50,
+  "benign_round_max_scores": {
+    "101": [
+      2.499,
+      2.114,
+      2.739,
+      3.178,
+      3.223,
+      5.05,
+      2.632,
+      3.451,
+      3.721,
+      2.673
+    ],
+    "102": [
+      2.381,
+      2.567,
+      5.272,
+      4.214,
+      3.752,
+      2.854,
+      2.418,
+      3.561,
+      3.354,
+      4.501
+    ],
+    "103": [
+      2.521,
+      2.24,
+      1.597,
+      2.23,
+      2.463,
+      2.951,
+      3.608,
+      2.669,
+      3.742,
+      4.341
+    ],
+    "104": [
+      11.235,
+      4.268,
+      6.042,
+      2.111,
+      3.622,
+      5.136,
+      2.488,
+      5.407,
+      3.989,
+      3.882
+    ],
+    "105": [
+      2.316,
+      4.052,
+      3.324,
+      1.696,
+      4.735,
+      4.354,
+      2.426,
+      3.586,
+      3.586,
+      2.806
+    ]
+  },
+  "max_honest_score": 11.235,
+  "calibrated_threshold_raw": 14.0435,
+  "threshold": 14.0,
+  "strong_evidence_factor": 2.0,
+  "strong_evidence_level": 28.0,
+  "attack_check_seed101": {
+    "free_ride": {
+      "attacker_score_min": 1000.0,
+      "attacker_score_median": 1000.0,
+      "honest_score_max": 5.11,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "grad_ascent": {
+      "attacker_score_min": 1812643.9,
+      "attacker_score_median": 3125817.0,
+      "honest_score_max": 5.11,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "label_flip": {
+      "attacker_score_min": 324.8,
+      "attacker_score_median": 787.9,
+      "honest_score_max": 4.68,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "layer_only": {
+      "attacker_score_min": 45.6,
+      "attacker_score_median": 95.6,
+      "honest_score_max": 4.35,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "noise": {
+      "attacker_score_min": 748697.8,
+      "attacker_score_median": 1700255.2,
+      "honest_score_max": 4.35,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "scale": {
+      "attacker_score_min": 957.5,
+      "attacker_score_median": 2147.8,
+      "honest_score_max": 4.75,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "sign_flip": {
+      "attacker_score_min": 118.8,
+      "attacker_score_median": 252.9,
+      "honest_score_max": 4.35,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    },
+    "zero_weights": {
+      "attacker_score_min": 98.0,
+      "attacker_score_median": 208.8,
+      "honest_score_max": 4.35,
+      "rejected": "9/9",
+      "false_positives": 0,
+      "final_test_acc": 0.9878
+    }
+  }
+}
