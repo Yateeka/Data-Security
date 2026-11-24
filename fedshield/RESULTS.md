@@ -2,7 +2,7 @@
 
 **Setup:** MNIST, 10 clients, IID split, 10 rounds, 1 local epoch per round, client 3 malicious (zero-indexed) unless stated otherwise, detector threshold 14.0 (calibrated on benign development seeds 101–105, see [`results/calibration/`](results/calibration/README.md)).
 **Environment:** GTX 1080 Ti, PyTorch 2.7.0, Nov 24, 2026. About 2 minutes per run.
-**Source:** 62 runs from `python run_sweep.py` (blocks A–G). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
+**Source:** 80 runs from `python run_sweep.py` (blocks A–G, W0, W). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
 
 ## 1. Defense on vs off
 
@@ -112,6 +112,31 @@ No honest upload was rejected in any of these runs.
 - **But the attacks that slip past a component barely hurt accuracy.** Undefended, `scale` ×3 ends at 98.72% and `layer_only` ×−1 at 98.70%, both the same as the defended model. After averaging with 9 honest clients, their effect disappears. Only `sign_flip` ×−1 costs accuracy (−0.18 points), and the layer scores catch it every round. In our tests, attacks subtle enough to evade part of FedShield were also too weak to damage the model.
 - **Clipping still shows no measurable benefit.** No tested attack is both accepted and harmful, so there is nothing for clipping to limit.
 
+## 7. Per-layer vs whole-model scoring
+
+FedShield scores each layer separately and takes the worst layer. To test whether this matters, the same detector was run with `--whole-model`, which flattens all parameters into one vector and computes a single norm and cosine score. Everything else is unchanged.
+
+**Fair threshold.** Whole-model scoring gets its own threshold, calibrated exactly like the main one: benign runs on development seeds 101–105 with nothing excluded, max honest score 11.04 × 1.25 = **13.8** (logs: [`results/calibration/whole_model_dev_runs/`](results/calibration/whole_model_dev_runs/)). Per-layer uses 14.0.
+
+**Geometry only.** Both modes ran with `--no-validation`, so the comparison measures only the scoring, not validation making up for it. Seed 42, client 3, onset 2:
+
+| Attack | Per-layer: attacker score | Per-layer: rejected | Whole-model: attacker score | Whole-model: rejected |
+| --- | ---: | ---: | ---: | ---: |
+| `layer_only` | 23–33 | 9/9 | **12.5–18.5** | **5/9** |
+| `label_flip` | 17–25 | 9/9 | 15–23 | 9/9 |
+| `sign_flip` | 18–38 | 9/9 | 17–33 | 9/9 |
+| `scale` | 23–27 | 9/9 | 23–25 | 9/9 |
+| `noise` | 55–62 | 9/9 | 53–61 | 9/9 |
+| `free_ride` | near-zero rule | 9/9 | near-zero rule | 9/9 |
+
+No honest client was flagged in either mode. A whole-model benign run (with validation) also had no false positives and ended at 98.76%, the same as the per-layer benign run.
+
+- **Per-layer scoring catches the single-layer attack that whole-model scoring partly misses.** `layer_only` corrupts only `fc2`. Per-layer scoring sees the `fc2` update's size as a clear outlier (reason `norm:fc2`, scores 23–33, at least 1.6× the threshold). In the whole-model vector, `fc2` is a small fraction of the parameters, so the same corruption is diluted to scores of 12.5–18.5, right at the threshold. The attacker was accepted in 4 of 9 rounds, and final accuracy fell slightly to 98.65% (vs 98.71%).
+- **For attacks that change the whole model, the two modes perform the same.** Per-layer scores are only slightly higher, and both reject every attacker upload.
+- **Validation evidence makes up for the gap.** With validation on, whole-model scoring also rejected `layer_only` 9/9 (98.71%). So per-layer scoring matters most when validation evidence is weak or unavailable, for example a secret validation set that the attacker has partly worked around.
+
+This is one seed and one single-layer attack, so it supports, rather than proves, the per-layer design.
+
 ## Limitations
 
 - **Narrow conditions:** all runs use an IID split, a single malicious client, and 3 evaluation seeds. The threshold was calibrated on IID benign runs. A non-IID split (`--partition dirichlet`) makes honest updates less alike and was not evaluated.
@@ -124,8 +149,9 @@ No honest upload was rejected in any of these runs.
 From `fedshield/`:
 
 ```bash
-python run_sweep.py            # all 62 runs, skips any already logged with the current threshold (~2 h on GPU)
-python run_sweep.py --block G  # only one block (A-G, see the top of run_sweep.py)
+python run_sweep.py            # all 80 runs, skips any already logged with the current threshold (~2.5 h on GPU)
+python run_sweep.py --block G  # only one block (A-G, W0, W; see the top of run_sweep.py)
+python run_sweep.py --calibrate-whole   # whole-model threshold from the W0 logs
 python run_sweep.py --summary  # rebuild results/level3_runs.json from the logs
 python plot_results.py         # redraw plots/fedshield_results.png and plots/fedshield_rounds.png
 ```

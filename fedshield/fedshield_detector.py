@@ -49,6 +49,9 @@ class DetectorConfig:
     # detection_metrics.calibrate_threshold (max x 1.25 margin) gives 14.04.
     threshold: float = 14.0
     use_validation: bool = True      # ablation switch: layer-only vs layer+val
+    # Ablation switch: False scores the whole model as ONE flattened vector
+    # (no per-layer view). Needs its own calibrated threshold.
+    layer_aware: bool = True
     val_weight: float = 1.0          # weight of the validation z-score
     # Near-zero norm rule: ||u_il|| < zero_norm_frac * median(norm of others)
     zero_norm_frac: float = 1e-3
@@ -133,6 +136,11 @@ def extract_delta(global_state, client_state):
 # --------------------------------------------------------------------------- #
 # Layer-aware scoring (Security workstream)
 # --------------------------------------------------------------------------- #
+def _whole_model(layers: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """Merge all per-layer vectors into one, for the whole-model ablation."""
+    return {"model": torch.cat(list(layers.values()))}
+
+
 def layer_aware_scores(deltas: List[Dict[str, torch.Tensor]], cfg: DetectorConfig):
     """Score m valid updates (m >= 3).
 
@@ -214,7 +222,7 @@ class FedShieldDefense:
             if d is None:
                 invalid[i] = why
             else:
-                deltas[i] = _flat_layers(d)
+                deltas[i] = _flat_layers(d) if cfg.layer_aware else _whole_model(_flat_layers(d))
         valid_ids = [i for i in range(n) if i not in invalid]
 
         scores = [0.0] * n

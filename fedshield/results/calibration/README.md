@@ -68,6 +68,12 @@ With the old settings (threshold 8.0, verdict only after 2 flagged rounds), the 
 
 Logs: `seed42_checks/`.
 
+## 4. Whole-model threshold (for the per-layer vs whole-model comparison)
+
+The `--whole-model` ablation scores all parameters as one vector, so it needs its own threshold. Same procedure as section 1, with `--whole-model --threshold 1e9` on seeds 101–105: the highest honest score was **11.04** (seed 104, round 1, the same round as the per-layer maximum). 11.04 × 1.25 = 13.80, so the threshold is **13.8**. Recompute it with `python run_sweep.py --calibrate-whole`.
+
+Logs: `whole_model_dev_runs/`.
+
 ## Limitations
 
 - Calibrated on 5 benign runs with an IID split. A non-IID split (`--partition dirichlet`) makes honest updates less alike and may need recalibration.
