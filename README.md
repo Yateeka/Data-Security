@@ -26,6 +26,13 @@ python level1_centralized.py --eval-only     # loads checkpoints/centralized_mni
 python level2_fedavg.py --eval-only          # loads checkpoints/fedavg_mnist_best.pt
 ```
 
+Quick checks without training or MNIST (each takes seconds):
+
+```bash
+python test_detector_synthetic.py            # detector, data split, calibration
+python test_malicious_client.py              # every attack mode in malicious_client.py
+```
+
 ### 3. Retrain (optional)
 
 ```bash
@@ -63,6 +70,8 @@ Ten clients train for 10 rounds with 1 local epoch each. The malicious client (`
 python level3_fedshield.py --attack sign_flip --defense off      # plain FedAvg with the attacker
 python level3_fedshield.py --attack sign_flip --no-validation    # detector without validation evidence
 python level3_fedshield.py --attack sign_flip --no-clip          # defense without norm clipping
+python level3_fedshield.py --attack sign_flip --malicious-id random   # attacker drawn from --seed
+python level3_fedshield.py --attack scale --attack-setting scale_factor=3   # weaker attack (any ATTACK_CONFIG key)
 ```
 
 `--defense off` runs plain FedAvg over every upload with no detector. `--no-validation` and `--no-clip` each remove one defense component. Each condition saves to its own files (`checkpoints/fedshield_mnist_nodefense_*.pt`, `_noval_`, `_noclip_`, and matching `logs/` names), so the main defended checkpoint is never overwritten.
@@ -85,7 +94,7 @@ python level3_fedshield.py --onset 2 --malicious-id 3
 
 If the replacement file defines only `generate_malicious_update`, the script runs it as the `custom` attack. The script decides when the attack starts (`--onset`), so the function does not need a round number. If the function raises an exception or returns a malformed state dict, that upload is treated as invalid and excluded; training continues.
 
-Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
+Final results (62 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
 
 ## What we are building
 
@@ -115,4 +124,4 @@ We measure final global-model test accuracy and malicious-client detection. Supp
 
 ## Repository contents
 
-The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, ten-client FedAvg baseline, defended Level 3 runner, malicious-client attack module, data split utilities, detector, metrics, and synthetic checks. See the Quick start above for run instructions, [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md) for demo scenarios, [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md) for developer notes, and [`fedshield/FIRST_RUN_REPORT.md`](fedshield/FIRST_RUN_REPORT.md) for results from the first integrated Level 3 run set.
+The implementation is in [`fedshield/`](fedshield/), including the centralized MNIST baseline, ten-client FedAvg baseline, defended Level 3 runner, malicious-client attack module, data split utilities, detector, metrics, and synthetic checks. See the Quick start above for run instructions, [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md) for demo scenarios, [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md) for developer notes, and [`fedshield/RESULTS.md`](fedshield/RESULTS.md) for the final Level 3 results.

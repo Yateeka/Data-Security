@@ -1,6 +1,6 @@
 # FedShield MNIST demo runbook
 
-Run every command from `fedshield/` after `pip install -r requirements.txt` (torch 2.7.0, torchvision 0.22.0). MNIST downloads automatically on the first run. `--device auto` (the default) uses a CUDA GPU when one is available and otherwise falls back to CPU. A 10-round Level 3 run takes about 2 minutes on a GTX 1080 Ti and about 5 minutes on CPU.
+Run every command from `fedshield/` after `pip install -r requirements.txt` (torch 2.7.0, torchvision 0.22.0). MNIST downloads automatically on the first run. `--device auto` (the default) uses a CUDA GPU when one is available and otherwise falls back to CPU. A 10-round Level 3 run takes about 2 minutes on a GTX 1080 Ti and about 5.5 minutes on an 8-core CPU (measured Nov 24 from a fresh clone). On CPU the detection is identical (client 3 flagged in rounds 2–10, same verdict), but floating-point differences give a final accuracy of 98.69% instead of 98.71%.
 
 All runs use 10 clients, 10 rounds, and 1 local epoch per round (the course setting). Client IDs are zero-indexed; rounds are one-indexed.
 
@@ -35,7 +35,7 @@ def generate_malicious_update(client_model_state_dict, local_dataset, device):
 Steps:
 
 1. Replace the body of `generate_malicious_update` in `malicious_client.py`, or replace the whole file with the different logic.
-2. Run `python3 level3_fedshield.py --onset 2 --malicious-id 3`. Choose any onset from 2 to 10 and any client ID from 0 to 9.
+2. Run `python3 level3_fedshield.py --onset 2 --malicious-id 3`. Choose any onset from 2 to 10 and any client ID from 0 to 9, or `--malicious-id random` to draw one from the seed.
 
 How the runner treats the replacement:
 
@@ -101,19 +101,21 @@ python3 level3_fedshield.py --attack sign_flip --no-clip          # no norm clip
 
 Each condition writes its own checkpoints (`checkpoints/fedshield_mnist_nodefense_{best,last}.pt`, `_noval_`, `_noclip_`) and logs (`..._onset2_nodefense.json`, `_noval`, `_noclip`). `--defense off` cannot be combined with the ablation switches. The checkpoint name does not include the attack, so two runs of the same condition overwrite each other's checkpoints; pass `--best-ckpt`/`--last-ckpt` to keep both.
 
-Observed (seed 42, GPU, torch 2.7.0, malicious client 3, onset 2; run with the earlier threshold 8.0, to be regenerated in the final sweep):
+Observed in the final sweep (seed 42, GPU, torch 2.7.0, threshold 14.0, malicious client 3, onset 2; full tables in [`RESULTS.md`](RESULTS.md)):
 
-| Condition | Attack | Final test acc | Malicious rejected | False positives |
-| --- | --- | --- | --- | --- |
-| FedShield (full) | `sign_flip` | 98.71% | 9/9 | 0 |
-| Plain FedAvg (`--defense off`) | `sign_flip` | 96.41% | — | — |
-| No validation evidence | `sign_flip` | 98.71% | 9/9 | 0 |
-| No clipping | `sign_flip` | 98.72% | 9/9 | 0 |
-| FedShield (full) | `label_flip` | 98.71% | 9/9 | 0 |
-| No validation evidence | `label_flip` | 98.71% | 9/9 | 0 |
-| Plain FedAvg (`--defense off`) | `nan` | 9.80% | — | — |
+| Attack | Plain FedAvg (`--defense off`) | FedShield | No validation | No clipping |
+| --- | ---: | ---: | ---: | ---: |
+| `noise` | 75.67% | 98.71% | | |
+| `layer_only` | 93.09% | 98.71% | 98.71% | 98.72% |
+| `sign_flip` | 96.41% | 98.71% | | |
+| `scale` | 96.81% | 98.71% | | |
+| `label_flip` | 97.71% | 98.71% | 98.71% | 98.72% |
+| `free_ride` | 98.61% | 98.71% | | |
+| none (benign) | 98.71% | 98.76% | | |
 
-Without the defense, a sign-flip attacker costs 2.3 points of accuracy, and one NaN upload makes the global model unusable from round 2 on. With these two attacks, the layer-aware scores alone already catch every malicious update. Clipping at `--clip-norm 5.0` barely changes the result because honest updates are much smaller than 5.0. Report these as single-seed observations.
+FedShield rejected 9/9 malicious uploads with 0 false positives in every defended run. All defended attack runs end at the same 98.71%: client 3 is excluded from round 2 on, so each round averages the same 9 honest updates. Removing validation evidence or clipping changes nothing for these attacks, because the layer-aware scores alone catch them, and the clip bound of 5.0 is far above honest update norms. An earlier run (threshold 8.0) also showed that one NaN upload under plain FedAvg makes the model unusable (9.80%).
+
+To rerun every scenario: `python run_sweep.py` (62 runs, ~2 h on GPU; checkpoints go to `checkpoints/sweep/`). Weaker attacks (`--attack-setting`, e.g. `scale_factor=3`) do show what validation adds: without it, `scale` ×3 is accepted in all 9 rounds, with it all 9 are rejected; see [`RESULTS.md`](RESULTS.md) §6.
 
 ## 6. Reload and resume
 
@@ -128,6 +130,6 @@ To continue an interrupted run, repeat the original command with `--resume`. The
 
 ## 7. Recorded results and limitations
 
-- `results/level3_cpu_runs.json`, `plots/fedshield_results.png`, `FIRST_RUN_REPORT.md`, and the committed `logs/fedshield_*` files come from the first CPU run set. That set used PyTorch 2.15.0 and the earlier attack code built into `level3_fedshield.py`. Its numbers are close to, but not identical with, runs of the current code on torch 2.7.0. Regenerate these files with the current code before final reporting.
+- Final results: [`RESULTS.md`](RESULTS.md), [`results/level3_runs.json`](results/level3_runs.json) (62 runs from `run_sweep.py`), and the plots `plots/fedshield_results.png` and `plots/fedshield_rounds.png` (`python plot_results.py`). The `logs/fedshield_*` files listed in `results/level3_runs.json` come from this sweep.
 - The threshold was calibrated on 5 benign IID runs. A non-IID split or a weaker, stealthier attack (score between 14 and 28, appearing only in the last round) would be excluded but not named in the final verdict.
-- All results come from a single seed and an IID split. Run multiple seeds, attack types, and malicious-client IDs before making broad performance claims.
+- Results cover 3 seeds (42, 7, 123), an IID split, and malicious clients 3, 9, and 7. Adaptive attacks that tune themselves to stay under the threshold were not tested.

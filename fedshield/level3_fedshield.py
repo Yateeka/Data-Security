@@ -3,6 +3,7 @@
 Examples (run from this directory):
     python level3_fedshield.py --attack sign_flip --onset 2 --malicious-id 3
     python level3_fedshield.py --attack label_flip --onset 10 --device cuda
+    python level3_fedshield.py --attack sign_flip --malicious-id random   # attacker drawn from --seed
     python level3_fedshield.py --attack none
     python level3_fedshield.py --eval-only
     python level3_fedshield.py --attack sign_flip --defense off      # plain FedAvg baseline
@@ -27,6 +28,7 @@ replacement has no ATTACK_MODES/configure(), run with the default --attack.
 import argparse
 import json
 import os
+import random
 from typing import Dict, Optional
 
 import torch
@@ -44,6 +46,26 @@ CKPT_PREFIX = "checkpoints/fedshield_mnist"   # + "<variant>_best.pt" / "_last.p
 _MODES = tuple(getattr(malicious_client, "ATTACK_MODES", ()))
 ATTACKS = ("none",) + (_MODES or ("custom",))
 DEFAULT_ATTACK = "sign_flip" if "sign_flip" in _MODES else ATTACKS[1]
+# Attack settings as shipped in malicious_client.py, restored before every run so
+# an --attack-setting from one in-process run (run_sweep.py) never leaks into the next.
+_ATTACK_DEFAULTS = dict(getattr(malicious_client, "ATTACK_CONFIG", {}))
+
+
+def _parse_attack_settings(items):
+    """['flip_factor=-1', ...] -> {'flip_factor': -1.0}, typed like the default."""
+    out = {}
+    for item in items or []:
+        key, sep, value = item.partition("=")
+        if not sep or key not in _ATTACK_DEFAULTS or key in ("mode", "seed"):
+            raise ValueError(item)
+        default = _ATTACK_DEFAULTS[key]
+        out[key] = type(default)(value) if not isinstance(default, str) else value
+    return out
+
+
+def _settings_tag(settings) -> str:
+    """{'flip_factor': -1.0} -> '_flip_factor-1.0' (part of the log name)."""
+    return "".join(f"_{k}{v}" for k, v in sorted(settings.items()))
 
 
 def resolve_device(choice: str) -> torch.device:
@@ -92,6 +114,17 @@ def _variant_tag(args) -> str:
     if args.defense == "off":
         return "_nodefense"
     return ("_noval" if args.no_validation else "") + ("_noclip" if args.no_clip else "")
+
+
+DEFAULT_MALICIOUS_ID = 3
+
+
+def _pick_malicious_id(value: str, seed: int, n_clients: int) -> int:
+    """--malicious-id: a client index, or 'random' = drawn from the seed with a
+    private RNG (same seed -> same client; the training RNG is not touched)."""
+    if value == "random":
+        return random.Random(f"malicious-client-{seed}").randrange(n_clients)
+    return int(value)
 
 
 def _clip_update(global_state, client_state, max_norm: float):
@@ -156,7 +189,11 @@ def main(argv=None):
     ap.add_argument("--attack", choices=ATTACKS, default=DEFAULT_ATTACK,
                     help="mode passed to malicious_client.configure(); 'none' = no attacker")
     ap.add_argument("--onset", type=int, default=2, help="1-indexed first attack round (>=2 for attacks)")
-    ap.add_argument("--malicious-id", type=int, default=3, help="0-indexed malicious client")
+    ap.add_argument("--malicious-id", default=str(DEFAULT_MALICIOUS_ID),
+                    help="0-indexed malicious client, or 'random' (chosen from --seed)")
+    ap.add_argument("--attack-setting", action="append", metavar="KEY=VALUE",
+                    help="override one ATTACK_CONFIG value in malicious_client.py for this "
+                         "run, e.g. --attack-setting flip_factor=-1 (repeatable)")
     ap.add_argument("--threshold", type=float, default=DetectorConfig().threshold,
                     help="detector flag threshold (default: calibrated value in fedshield_detector.py)")
     ap.add_argument("--clip-norm", type=float, default=5.0)
@@ -180,8 +217,22 @@ def main(argv=None):
         ap.error("--clients must be at least 3 for layer-aware scoring")
     if args.attack != "none" and args.onset < 2:
         ap.error("attacks must start at round 2 or later")
+    try:
+        attack_settings = _parse_attack_settings(args.attack_setting)
+    except ValueError as exc:
+        ap.error(f"bad --attack-setting {exc}; use KEY=VALUE with a key from "
+                 f"malicious_client.ATTACK_CONFIG other than mode/seed")
+    if attack_settings and (args.attack == "none" or not _ATTACK_DEFAULTS):
+        ap.error("--attack-setting needs an attack and a malicious_client.py with ATTACK_CONFIG")
+    malicious_choice = args.malicious_id
+    try:
+        args.malicious_id = _pick_malicious_id(args.malicious_id, args.seed, args.clients)
+    except ValueError:
+        ap.error("--malicious-id must be a client index or 'random'")
     if not 0 <= args.malicious_id < args.clients:
         ap.error("--malicious-id must be a valid zero-based client index")
+    if malicious_choice == "random" and args.attack != "none":
+        print(f"--malicious-id random: seed {args.seed} picked client {args.malicious_id}")
     if args.onset > args.rounds and args.attack != "none":
         ap.error("--onset cannot be later than --rounds")
     if args.clip_norm <= 0:
@@ -215,6 +266,8 @@ def main(argv=None):
                   threshold=args.threshold, val_size=args.val_size,
                   defense=args.defense, use_validation=not args.no_validation,
                   clip=not args.no_clip)
+    if attack_settings:   # only present when used, so older checkpoints still --resume
+        config["attack_settings"] = attack_settings
 
     if args.eval_only:
         best_model, best_meta = load_checkpoint(args.best_ckpt, device=device)
@@ -225,7 +278,11 @@ def main(argv=None):
         print(f"last checkpoint round {last_meta.get('round')}: test accuracy={last_acc:.4f}")
         return
 
-    run_name = f"fedshield_{args.attack}_{args.partition}_seed{args.seed}_onset{args.onset}{tag}"
+    # Runs with a non-default attacker get their own log names (..._mal7).
+    mal_tag = (f"_mal{args.malicious_id}"
+               if args.attack != "none" and args.malicious_id != DEFAULT_MALICIOUS_ID else "")
+    run_name = (f"fedshield_{args.attack}_{args.partition}_seed{args.seed}"
+                f"_onset{args.onset}{mal_tag}{_settings_tag(attack_settings)}{tag}")
     log_path = args.log_path or f"logs/{run_name}.jsonl"
     print(f"condition: " + ("FedShield defense" if defended else "plain FedAvg (no defense)")
           + (" | no validation evidence" if args.no_validation else "")
@@ -260,15 +317,18 @@ def main(argv=None):
 
     if args.attack != "none":
         if hasattr(malicious_client, "configure"):
-            malicious_client.configure(mode=args.attack, seed=args.seed,
-                                       local_epochs=args.local_epochs, lr=args.lr,
-                                       momentum=args.momentum)
+            malicious_client.configure(**{
+                **_ATTACK_DEFAULTS, **attack_settings, "mode": args.attack,
+                "seed": args.seed, "local_epochs": args.local_epochs, "lr": args.lr,
+                "momentum": args.momentum})
         else:
             print("malicious_client.py has no configure(); using its "
                   "generate_malicious_update() as provided")
         if hasattr(malicious_client, "reset_call_count"):
             # Attack calls already made before start_round (non-zero on --resume).
             malicious_client.reset_call_count(max(0, start_round - args.onset))
+        if attack_settings:
+            print(f"attack settings: {attack_settings}")
         print(f"malicious client {args.malicious_id}: honest until round "
               f"{args.onset - 1}, then malicious_client.generate_malicious_update")
 
