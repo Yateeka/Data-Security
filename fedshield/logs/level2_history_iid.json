@@ -2,58 +2,68 @@
   "history": [
     {
       "round": 1,
-      "val_loss": 0.20635188293457032,
+      "train_loss": 1.0119200780486861,
+      "val_loss": 0.2066611633300781,
       "val_acc": 0.936
     },
     {
       "round": 2,
-      "val_loss": 0.10811138916015625,
+      "train_loss": 0.23714987915478836,
+      "val_loss": 0.10817383193969726,
       "val_acc": 0.96
     },
     {
       "round": 3,
-      "val_loss": 0.07105277061462402,
+      "train_loss": 0.1566828235185572,
+      "val_loss": 0.07092218780517578,
       "val_acc": 0.976
     },
     {
       "round": 4,
-      "val_loss": 0.05857550621032715,
+      "train_loss": 0.12268685749849352,
+      "val_loss": 0.0584923210144043,
       "val_acc": 0.978
     },
     {
       "round": 5,
-      "val_loss": 0.05151185607910156,
+      "train_loss": 0.10090928674918137,
+      "val_loss": 0.0510757999420166,
       "val_acc": 0.984
     },
     {
       "round": 6,
-      "val_loss": 0.04412050628662109,
+      "train_loss": 0.08896976934957217,
+      "val_loss": 0.04394708824157715,
       "val_acc": 0.986
     },
     {
       "round": 7,
-      "val_loss": 0.03734677505493164,
-      "val_acc": 0.99
-    },
-    {
-      "round": 8,
-      "val_loss": 0.035076481819152835,
+      "train_loss": 0.07755835133706447,
+      "val_loss": 0.0374887228012085,
       "val_acc": 0.986
     },
     {
+      "round": 8,
+      "train_loss": 0.07192024679056236,
+      "val_loss": 0.03596182155609131,
+      "val_acc": 0.984
+    },
+    {
       "round": 9,
-      "val_loss": 0.034357807159423825,
-      "val_acc": 0.988
+      "train_loss": 0.06607559760562888,
+      "val_loss": 0.03535826873779297,
+      "val_acc": 0.986
     },
     {
       "round": 10,
-      "val_loss": 0.034393064498901366,
+      "train_loss": 0.05945871096151341,
+      "val_loss": 0.035011276245117184,
       "val_acc": 0.988
     }
   ],
-  "best_round": 9,
-  "best_test_acc": 0.9862,
-  "final_test_acc": 0.9872,
+  "best_round": 10,
+  "best_test_acc": 0.9871,
+  "final_test_acc": 0.9871,
   "args": {
     "clients": 10,
     "rounds": 10,
@@ -67,6 +77,7 @@
     "best_ckpt": "checkpoints/fedavg_mnist_best.pt",
     "last_ckpt": "checkpoints/fedavg_mnist_last.pt",
     "resume": false,
-    "eval_only": false
+    "eval_only": false,
+    "device": "auto"
   }
 }

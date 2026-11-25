@@ -71,11 +71,13 @@ def partition_clients(train_pool, num_clients: int = 10, seed: int = 42,
 
 def local_train(model: nn.Module, global_state: Dict[str, torch.Tensor], dataset,
                 epochs: int = 1, lr: float = 0.01, momentum: float = 0.9,
-                seed: int = 0, device=None) -> Dict[str, torch.Tensor]:
+                seed: int = 0, device=None, stats: dict = None) -> Dict[str, torch.Tensor]:
     """Client side: load the global weights, train on local data, return new weights.
 
     A fresh optimizer is created every round (clients keep no state between rounds).
     `seed` fixes this client's shuffling order so runs are reproducible.
+    If `stats` (a dict) is given, the mean training loss over all local batches is
+    stored in stats["train_loss"]; this only records the loss, training is unchanged.
     """
     device = device or next(model.parameters()).device
     model.load_state_dict(global_state)
@@ -83,12 +85,19 @@ def local_train(model: nn.Module, global_state: Dict[str, torch.Tensor], dataset
     g = torch.Generator().manual_seed(seed)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, generator=g)
     opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    loss_sum, seen = 0.0, 0
     for _ in range(epochs):
         for x, y in loader:
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
-            F.cross_entropy(model(x), y).backward()
+            loss = F.cross_entropy(model(x), y)
+            loss.backward()
             opt.step()
+            if stats is not None:
+                loss_sum += loss.item() * len(y)
+                seen += len(y)
+    if stats is not None:
+        stats["train_loss"] = loss_sum / max(seen, 1)
     return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
 
