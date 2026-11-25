@@ -120,11 +120,19 @@ def _variant_tag(args) -> str:
 DEFAULT_MALICIOUS_ID = 3
 
 
-def _pick_malicious_id(value: str, seed: int, n_clients: int) -> int:
-    """--malicious-id: a client index, or 'random' = drawn from the seed with a
-    private RNG (same seed -> same client; the training RNG is not touched)."""
+def _pick_malicious_id(value: str, seed: int, n_clients: int, attack: str = "") -> int:
+    """--malicious-id: a client index, or 'random'.
+
+    'random' shuffles the clients with a private RNG seeded by --seed (the
+    training RNG is not touched) and gives each attack mode its own position in
+    that order, so different attacks get DIFFERENT malicious clients within a
+    seed, and the same seed + attack always gives the same client.
+    """
     if value == "random":
-        return random.Random(f"malicious-client-{seed}").randrange(n_clients)
+        order = list(range(n_clients))
+        random.Random(f"malicious-client-{seed}").shuffle(order)
+        idx = _MODES.index(attack) if attack in _MODES else 0
+        return order[idx % n_clients]
     return int(value)
 
 
@@ -230,13 +238,15 @@ def main(argv=None):
         ap.error("--attack-setting needs an attack and a malicious_client.py with ATTACK_CONFIG")
     malicious_choice = args.malicious_id
     try:
-        args.malicious_id = _pick_malicious_id(args.malicious_id, args.seed, args.clients)
+        args.malicious_id = _pick_malicious_id(args.malicious_id, args.seed, args.clients,
+                                               args.attack)
     except ValueError:
         ap.error("--malicious-id must be a client index or 'random'")
     if not 0 <= args.malicious_id < args.clients:
         ap.error("--malicious-id must be a valid zero-based client index")
     if malicious_choice == "random" and args.attack != "none":
-        print(f"--malicious-id random: seed {args.seed} picked client {args.malicious_id}")
+        print(f"--malicious-id random: seed {args.seed}, attack {args.attack} "
+              f"-> client {args.malicious_id}")
     if args.onset > args.rounds and args.attack != "none":
         ap.error("--onset cannot be later than --rounds")
     if args.clip_norm <= 0:

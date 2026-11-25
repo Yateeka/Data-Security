@@ -12,6 +12,7 @@ no federated run; about 10 seconds):
   - configure() rejects unknown settings, and level3_fedshield's --attack-setting
     overrides are restored to the defaults before the next run
   - the detector accepts every finite attack as well-formed and rejects the NaN one
+  - --malicious-id random gives each attack mode its own client, reproducibly
 """
 import torch
 from torch.utils.data import TensorDataset
@@ -178,6 +179,16 @@ def test_level3_attack_settings_reset():
     mc.configure(**{**l3._ATTACK_DEFAULTS, **base})      # next run, no overrides
     assert mc.ATTACK_CONFIG["flip_factor"] == DEFAULTS["flip_factor"]
     assert mc.ATTACK_CONFIG["target_layer"] == DEFAULTS["target_layer"]
+
+
+def test_random_malicious_id_per_attack():
+    import level3_fedshield as l3
+    for seed in (42, 7, 123):
+        picks = [l3._pick_malicious_id("random", seed, 10, a) for a in mc.ATTACK_MODES]
+        assert len(set(picks)) == len(picks), "each attack mode must get its own client"
+        assert picks == [l3._pick_malicious_id("random", seed, 10, a) for a in mc.ATTACK_MODES]
+    assert l3._pick_malicious_id("5", 42, 10, "noise") == 5          # explicit id unchanged
+    assert 0 <= l3._pick_malicious_id("random", 42, 10, "custom") < 10  # TA replacement file
 
 
 def test_detector_validity_check():

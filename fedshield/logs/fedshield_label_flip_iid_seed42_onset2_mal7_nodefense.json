@@ -1,0 +1,237 @@
+{
+  "config": {
+    "attack": "label_flip",
+    "onset": 2,
+    "malicious_id": 7,
+    "clients": 10,
+    "partition": "iid",
+    "alpha": 0.5,
+    "seed": 42,
+    "local_epochs": 1,
+    "lr": 0.01,
+    "momentum": 0.9,
+    "clip_norm": 5.0,
+    "threshold": 14.0,
+    "val_size": 500,
+    "defense": "off",
+    "use_validation": true,
+    "clip": true
+  },
+  "history": [
+    {
+      "round": 1,
+      "val_loss": 0.2066611633300781,
+      "val_acc": 0.936,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 2,
+      "val_loss": 0.31030828857421877,
+      "val_acc": 0.97,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 3,
+      "val_loss": 0.13200365447998047,
+      "val_acc": 0.978,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 4,
+      "val_loss": 0.13587087249755858,
+      "val_acc": 0.98,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 5,
+      "val_loss": 0.09223096084594727,
+      "val_acc": 0.988,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 6,
+      "val_loss": 0.10240181732177735,
+      "val_acc": 0.986,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 7,
+      "val_loss": 0.0730702018737793,
+      "val_acc": 0.986,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 8,
+      "val_loss": 0.09180389022827148,
+      "val_acc": 0.982,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 9,
+      "val_loss": 0.0640184268951416,
+      "val_acc": 0.986,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    },
+    {
+      "round": 10,
+      "val_loss": 0.08162611389160156,
+      "val_acc": 0.984,
+      "accepted": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "flagged": [],
+      "invalid": [],
+      "scores": null,
+      "reasons": {}
+    }
+  ],
+  "verdict": null,
+  "metrics": null,
+  "best_round": 9,
+  "best_test_acc": 0.9819,
+  "final_test_acc": 0.9795
+}

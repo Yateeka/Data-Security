@@ -2,7 +2,7 @@
 
 **Setup:** MNIST, 10 clients, IID split, 10 rounds, 1 local epoch per round, client 3 malicious (zero-indexed) unless stated otherwise, detector threshold 14.0 (calibrated on benign development seeds 101–105, see [`results/calibration/`](results/calibration/README.md)).
 **Environment:** GTX 1080 Ti, PyTorch 2.7.0, Nov 24, 2026. About 2 minutes per run.
-**Source:** 82 runs from `python run_sweep.py` (blocks A–G, W0, W). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
+**Source:** 88 runs from `python run_sweep.py` (blocks A–G, W0, W). Per-run numbers are in [`results/level3_runs.json`](results/level3_runs.json), and the full per-round logs are in `logs/fedshield_*`. All accuracies are on the MNIST test set, using the round-10 model, which is the model the course evaluates.
 
 ## 1. Defense on vs off
 
@@ -66,18 +66,41 @@ FedShield, onset 2, seeds 42, 7, and 123.
 
 Each attack's row is identical, for the reason given in section 1. Across all of these runs, every attacker upload was rejected in the round it was sent, and no honest upload was ever rejected.
 
-## 5. Random malicious client
+## 5. Random malicious client per attack
 
-Sections 1–4 always use client 3, so that the defense on/off comparison changes only the attack. To check that detection does not depend on which client attacks, the same 6 attacks were rerun with `--malicious-id random`. The attacker is drawn from the seed with a separate random generator, so training is not affected. Seed 42 picked client 9; seeds 7 and 123 picked client 7. FedShield, onset 2:
+Sections 1–4 always use client 3, so that the defense on/off comparison changes only the attack. To check that detection does not depend on which client attacks, the 6 attacks were rerun with `--malicious-id random`, which gives **each attack its own malicious client**: the 10 clients are shuffled with a private random generator seeded by `--seed` (training is not affected), and each attack mode takes its own position in that order. So within a seed every attack has a different attacker, and the same seed and attack always give the same client. The 18 runs used 9 distinct attackers (every client except 3); together with the client-3 runs in sections 1–4, every one of the 10 clients has been tested as the attacker.
 
-| Seed | Malicious client | Final test acc (each of the 6 attacks) | Rejected | Honest uploads rejected | Final verdict |
-| --- | ---: | ---: | ---: | ---: | --- |
-| 42 | 9 | 98.69% | 9/9 per attack | 0 | client 9 (6/6 runs) |
-| 7 | 7 | 98.68% | 9/9 per attack | 0 | client 7 (6/6 runs) |
-| 123 | 7 | 98.71% | 9/9 per attack | 0 | client 7 (6/6 runs) |
-| **Mean ± std** | | **98.69% ± 0.02** | | | |
+FedShield, onset 2 (malicious client and final test accuracy):
 
-The results match the client-3 runs: every attacker upload was rejected from the first attack round, no honest client was excluded, and every verdict named the right client. Accuracy differs slightly from section 4 because a different honest client is left out of each round. The detector never sees `--malicious-id`; it is used only to pick which client attacks and to score the result afterwards. Logs end in `_mal9` / `_mal7`.
+| Attack | Seed 42 | Seed 7 | Seed 123 |
+| --- | ---: | ---: | ---: |
+| `noise` | client 4: 98.74% | client 2: 98.72% | client 9: 98.64% |
+| `layer_only` | client 9: 98.69% | client 7: 98.68% | client 7: 98.71% |
+| `sign_flip` | client 6: 98.75% | client 4: 98.73% | client 0: 98.63% |
+| `scale` | client 2: 98.74% | client 6: 98.74% | client 8: 98.59% |
+| `label_flip` | client 7: 98.68% | client 0: 98.71% | client 1: 98.59% |
+| `free_ride` | client 0: 98.75% | client 1: 98.72% | client 5: 98.62% |
+
+All 18 runs: 9/9 attacker uploads rejected from the first attack round, no honest client excluded, and the final verdict named the right client every time. Final accuracy 98.69% ± 0.05 (min 98.59%, max 98.75%).
+
+Unlike section 1, defended accuracy now differs slightly between attacks of the same seed: each attack excludes a different client, so each run averages a different set of 9 honest clients. The detector never sees `--malicious-id`; it is used only to pick which client attacks and to score the result afterwards. Logs end in `_mal<client>`.
+
+**Defense on vs off with the random clients** (seed 42, same comparison as section 1):
+
+| Attack | Malicious client | FedAvg, no defense | FedShield | FedAvg, no defense, client 3 (§1) |
+| --- | ---: | ---: | ---: | ---: |
+| `noise` | 4 | 79.27% | 98.74% | 75.67% |
+| `layer_only` | 9 | 90.14% | 98.69% | 93.09% |
+| `sign_flip` | 6 | 96.80% | 98.75% | 96.41% |
+| `scale` | 2 | 97.98% | 98.74% | 96.81% |
+| `label_flip` | 7 | 97.95% | 98.68% | 97.71% |
+| `free_ride` | 0 | 98.66% | 98.75% | 98.61% |
+
+How much an undefended attack hurts depends on which client sends it (for example `noise` from client 4 vs client 3, `scale` from client 2 vs client 3), because each client's honest update and data differ. The attacks still rank in nearly the same order, and FedShield removes the damage in every case.
+
+![Final test accuracy, random malicious client per attack](plots/fedshield_results_random.png)
+
+![Validation accuracy per round, random malicious client per attack](plots/fedshield_rounds_random.png)
 
 ## 6. Weak attacks: what validation and clipping add
 
@@ -141,7 +164,6 @@ This is one seed and one single-layer attack, so it supports, rather than proves
 ## Limitations
 
 - **Narrow conditions:** all runs use an IID split, a single malicious client, and 3 evaluation seeds. The threshold was calibrated on IID benign runs. A non-IID split (`--partition dirichlet`) makes honest updates less alike and was not evaluated.
-- **Narrow attacker coverage:** the malicious client was client 3, 9, or 7 (section 5); other IDs were not tested.
 - **No adaptive attacks:** section 6's weak attacks were fixed in advance. An attacker that adjusts its update to stay just under the threshold while still doing harm was not tested, and clipping's benefit is not demonstrated. An attack scoring between 14 and 28 that appears only in round 10 would be excluded but not named in the verdict.
 - **Small validation set:** per-round validation accuracy comes from 500 held-out images, so steps of 0.2 points are single images.
 
@@ -150,7 +172,7 @@ This is one seed and one single-layer attack, so it supports, rather than proves
 From `fedshield/`:
 
 ```bash
-python run_sweep.py            # all 82 runs, skips any already logged with the current threshold (~2.5 h on GPU)
+python run_sweep.py            # all 88 runs, skips any already logged with the current threshold (~2.5 h on GPU)
 python run_sweep.py --block G  # only one block (A-G, W0, W; see the top of run_sweep.py)
 python run_sweep.py --calibrate-whole   # whole-model threshold from the W0 logs
 python run_sweep.py --summary  # rebuild results/level3_runs.json from the logs
