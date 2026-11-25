@@ -17,7 +17,8 @@ Blocks:
   D  layer_only, label_flip with --no-validation / --no-clip (ablation)
   E  block A's defended runs + benign on seeds 7 and 123      (seed spread)
   F  the 6 attacks on seeds 42, 7, 123 with --malicious-id random, defended
-     (attacker drawn from the seed instead of client 3; logs end in _mal<k>)
+     (each attack gets its own client from a seeded shuffle; logs end in _mal<k>)
+     + the same 6 attacks undefended on seed 42 (FedAvg baseline for the plots)
   G  weak attacks chosen on development seed 101 (results/weak_attack_probe/), seed 42:
      scale x3 (layer scores miss it, validation catches it) under full / no
      validation / no clipping / no defense; layer_only x-1 (missed by both) and
@@ -80,6 +81,8 @@ def plan():
     for s in [MAIN_SEED] + EXTRA_SEEDS:                 # F
         for a in ATTACKS:
             add("F", a, seed=s, malicious="random")
+    for a in ATTACKS:                                   # F: undefended baseline, seed 42
+        add("F", a, defense="off", malicious="random")
     scale3 = {"scale_factor": 3.0}                      # G
     add("G", "scale", settings=scale3)
     add("G", "scale", settings=scale3, ablation="no_validation")
@@ -105,7 +108,7 @@ def plan():
 def malicious_id(r):
     """The attacker's client index (resolves 'random' exactly as the runner does)."""
     from level3_fedshield import _pick_malicious_id
-    return _pick_malicious_id(r["malicious"], r["seed"], 10)
+    return _pick_malicious_id(r["malicious"], r["seed"], 10, r["attack"])
 
 
 def run_name(r):
