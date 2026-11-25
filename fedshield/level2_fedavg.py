@@ -90,18 +90,23 @@ def main():
         print(f"resumed after round {meta['round']} (best val loss {best_val:.4f})")
 
     for rnd in range(start_round, args.rounds + 1):
-        client_states = []
+        client_states, client_losses = [], []
         for cid, data in enumerate(clients):
+            stats = {}
             # Seed differs per (round, client) so shuffling is reproducible but not repeated.
             state = local_train(model, global_state, data, args.local_epochs,
                                 args.lr, args.momentum,
-                                seed=args.seed * 10_000 + rnd * 100 + cid, device=device)
+                                seed=args.seed * 10_000 + rnd * 100 + cid, device=device,
+                                stats=stats)
             client_states.append(state)
+            client_losses.append(stats["train_loss"])
 
         global_state = fedavg(client_states, sizes)
         model.load_state_dict(global_state)
         val_loss, val_acc = evaluate(model, val_loader, device)
-        history.append(dict(round=rnd, val_loss=val_loss, val_acc=val_acc))
+        # Sample-weighted mean of the clients' local training losses this round.
+        train_loss = sum(l * n for l, n in zip(client_losses, sizes)) / sum(sizes)
+        history.append(dict(round=rnd, train_loss=train_loss, val_loss=val_loss, val_acc=val_acc))
 
         # Val loss is a smoother selection signal than accuracy on 500 images.
         improved = val_loss < best_val
@@ -112,7 +117,7 @@ def main():
                             clients=args.clients, local_epochs=args.local_epochs)
         save_checkpoint(args.last_ckpt, model, round=rnd, history=history,
                         best_val_loss=best_val, seed=args.seed)
-        print(f"round {rnd}/{args.rounds}  val_loss={val_loss:.4f}  "
+        print(f"round {rnd}/{args.rounds}  train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  "
               f"val_acc={val_acc:.4f}{'  *best*' if improved else ''}")
 
     # Final evaluation: test set is touched only here, after training is over.

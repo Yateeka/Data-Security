@@ -9,10 +9,10 @@ Yateeka has run the following checks locally on a Mac:
 - `python3 test_detector_synthetic.py` — all listed checks passed: five synthetic detector scenarios, late-onset exclusion, benign false-positive check, invalid-update rejection, validation evidence, threshold calibration, and reproducible split/no-leakage check. These are component-level synthetic checks, not evidence of performance on a federated training run.
 - `python3 level1_centralized.py --epochs 5 --seed 42` — first run (Mac, CPU): 99.04% test accuracy from the last epoch. Rerun on Nov 20 (Linux, GTX 1080 Ti, torch 2.7.0) after switching to best-epoch selection: the lowest validation loss was at epoch 4, and that checkpoint scores **98.97% test accuracy** (last epoch: 98.98%). It is saved to `checkpoints/centralized_mnist_best.pt`, and `--eval-only` reproduces 98.97%.
 
-Jessie has run Level 2 on Linux (CPU only, Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4):
+Jessie has run Level 2 on Linux (Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4). The submitted checkpoint was retrained on Nov 25 on the GTX 1080 Ti GPU; the earlier CPU run is in git history:
 
-- `python3 level2_fedavg.py` (10 clients, IID split, 10 rounds, 1 local epoch, seed 42) — about 5 minutes on CPU. Validation loss fell from 0.206 after round 1 to 0.034 by round 9 and stayed there in round 10. **Final global model: 98.72% test accuracy.** Best checkpoint by validation loss (round 9): **98.62% test accuracy**, saved to `checkpoints/fedavg_mnist_best.pt`.
-- `python3 level2_fedavg.py --eval-only` — reloaded the best checkpoint and reproduced 98.62%.
+- `python3 level2_fedavg.py` (10 clients, IID split, 10 rounds, 1 local epoch, seed 42) — 104 s on the GPU (308 s on CPU). Validation loss fell from 0.207 after round 1 to 0.035 in round 10, which is the best round; the mean client training loss fell from 1.012 to 0.060. **Best (= final) global model: 98.71% test accuracy**, saved to `checkpoints/fedavg_mnist_best.pt`.
+- `python3 level2_fedavg.py --eval-only` — reloaded the best checkpoint and reproduced 98.71%.
 - `--resume` was checked by stopping after round 2 and resuming to round 3; round 3 matched the uninterrupted run exactly.
 
 The Level 3 defended runner is implemented and integrated in `level3_fedshield.py`. It connects local client training, detector validation-loss scoring, guarded aggregation, clipping, metrics, and best/last checkpoints. The malicious client's upload comes from `malicious_client.generate_malicious_update()` (the course-required interface), which the runner calls from `--onset` on. Results from the sign-flip, label-flip, late-onset, and benign CPU runs are summarized below and in `DEMO_RUNBOOK.md`.
@@ -121,7 +121,7 @@ Yateeka and Jessie should jointly review the scoring interface and security-test
 
 ## Setup and first checks
 
-Tested environment for Level 2 (Jessie's run): Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4 (CPU, Linux). Level 1 was run on Yateeka's Mac; record its versions here too. From this directory, install the pinned project dependencies once:
+Tested environment for Level 2 (Jessie's run): Python 3.12.3, torch 2.7.0, torchvision 0.22.0, NumPy 2.5.4 (Linux, GTX 1080 Ti GPU; also runs on CPU). Level 1 was run on Yateeka's Mac; record its versions here too. From this directory, install the pinned project dependencies once:
 
 ```bash
 pip install -r requirements.txt
