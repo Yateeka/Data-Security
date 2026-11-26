@@ -97,6 +97,37 @@ If the replacement file defines only `generate_malicious_update`, the script run
 
 Final results (88 runs: defense on/off, ablations, 3 seeds, random attacker, weak attacks, per-layer vs whole-model scoring): [`fedshield/RESULTS.md`](fedshield/RESULTS.md). Detailed scenarios and expected outputs: [`fedshield/DEMO_RUNBOOK.md`](fedshield/DEMO_RUNBOOK.md). Developer notes and work split: [`fedshield/handoff_notes.md`](fedshield/handoff_notes.md).
 
+## TA evaluation
+
+From the extracted project folder, enter `fedshield/`, install the pinned requirements, and run the saved-checkpoint evaluations. These commands do not retrain the models:
+
+```bash
+cd fedshield
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python level1_centralized.py --eval-only
+python level2_fedavg.py --eval-only
+python level3_fedshield.py --eval-only
+```
+
+The Level 3 command reports both checkpoints. Use `checkpoints/fedshield_mnist_last.pt` for the final round-10 model; `fedshield_mnist_best.pt` is the best-validation checkpoint from round 9. The first run downloads MNIST if it is not already present. The scripts select CUDA when available and otherwise run on CPU.
+
+If the TA supplies a separate test DataLoader, it can be passed directly to the shared evaluator. It must yield `(images, labels)` batches in the model's expected input format:
+
+```python
+from common import evaluate, get_device, load_checkpoint
+
+device = get_device()
+model, metadata = load_checkpoint(
+    "checkpoints/fedshield_mnist_last.pt", device=device
+)
+loss, accuracy = evaluate(model, ta_test_loader, device)
+print(f"Test accuracy: {accuracy:.2%}")
+```
+
+`ta_test_loader` is the DataLoader provided by the TA. This evaluates the saved round-10 model without retraining.
+
 ## What we are building
 
 The project covers three levels:
